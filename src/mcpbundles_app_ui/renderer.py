@@ -5,6 +5,8 @@ The renderer takes an app definition (theme + layout) and produces
 a standalone HTML document compliant with MCP UI spec (text/html+mcp).
 """
 
+import functools
+from pathlib import Path
 from typing import Optional
 
 
@@ -61,6 +63,8 @@ class AppRenderer:
 {self.theme.get_css_variables()}
 {self._get_base_css()}
 {self._get_component_css()}
+{self._get_frappe_charts_css()}
+{self._get_frappe_theme_overrides()}
   </style>
   {custom_head or ''}
 </head>
@@ -86,7 +90,11 @@ class AppRenderer:
   </div>
 
   <script>
+{self._get_frappe_charts_js()}
+  </script>
+  <script>
 {self._get_mcp_client_js()}
+{self._get_chart_helpers_js()}
 {self._get_component_js()}
 {custom_scripts or ''}
 {self._get_auto_actions_js()}
@@ -102,6 +110,195 @@ class AppRenderer:
         if self.theme.font_url:
             return f'<link rel="preconnect" href="https://fonts.googleapis.com">\n  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n  <link href="{self.theme.font_url}" rel="stylesheet">'
         return ""
+
+    @staticmethod
+    @functools.cache
+    def _get_frappe_charts_js() -> str:
+        """Load Frappe Charts JS (cached, loaded once per process)."""
+        assets_dir = Path(__file__).parent / "assets"
+        return (assets_dir / "frappe-charts.min.js").read_text(encoding="utf-8")
+
+    @staticmethod
+    @functools.cache
+    def _get_frappe_charts_css() -> str:
+        """Load Frappe Charts CSS (cached, loaded once per process)."""
+        assets_dir = Path(__file__).parent / "assets"
+        return (assets_dir / "frappe-charts.min.css").read_text(encoding="utf-8")
+
+    def _get_frappe_theme_overrides(self) -> str:
+        """Override Frappe Charts CSS variables with our theme."""
+        return """
+/* Frappe Charts theme integration */
+:root {
+  --charts-label-color: var(--text-secondary);
+  --charts-axis-line-color: var(--border);
+  --charts-tooltip-title: var(--text-primary);
+  --charts-tooltip-label: var(--text-secondary);
+  --charts-tooltip-value: var(--text-primary);
+  --charts-tooltip-bg: var(--bg-card);
+  --charts-legend-label: var(--text-secondary);
+  --charts-legend-value: var(--text-primary);
+}
+.chart-container {
+  font-family: var(--font-family);
+}
+.chart-container .graph-svg-tip {
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-md);
+}
+"""
+
+    @staticmethod
+    def _get_chart_helpers_js() -> str:
+        """Global helper functions for rendering Frappe Charts."""
+        return """
+    // ==========================================================================
+    // Chart Helpers — convenience wrappers around frappe.Chart
+    // ==========================================================================
+
+    const _chartInstances = {};
+
+    /**
+     * Render a Frappe chart into a container element.
+     *
+     * @param {string} containerId - DOM element ID to render into
+     * @param {Object} options - Chart configuration
+     * @param {string} options.type - Chart type: 'bar', 'line', 'pie', 'donut', 'percentage', 'heatmap'
+     * @param {Object} options.data - Chart data: { labels: [...], datasets: [{ values: [...] }] }
+     * @param {string} [options.title] - Chart title
+     * @param {number} [options.height=250] - Chart height in pixels
+     * @param {string[]} [options.colors] - Custom colors array
+     * @param {Object} [options.axisOptions] - Axis configuration
+     * @param {Object} [options.barOptions] - Bar-specific options (stacked, spaceRatio)
+     * @param {Object} [options.lineOptions] - Line-specific options (dotSize, regionFill)
+     * @param {boolean} [options.animate=true] - Enable animations
+     * @returns {Object} Frappe Chart instance
+     *
+     * Usage:
+     *   renderChart('my-chart', {
+     *     type: 'bar',
+     *     data: {
+     *       labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+     *       datasets: [{ name: 'Sales', values: [10, 20, 30, 25, 15] }]
+     *     },
+     *     colors: ['var(--accent)'],
+     *     height: 200
+     *   });
+     */
+    function renderChart(containerId, options) {
+      const el = document.getElementById(containerId);
+      if (!el) {
+        console.warn('renderChart: element not found:', containerId);
+        return null;
+      }
+
+      // Destroy existing chart in this container
+      if (_chartInstances[containerId]) {
+        try { _chartInstances[containerId].destroy(); } catch (e) { /* ignore */ }
+        el.innerHTML = '';
+      }
+
+      const chartColors = options.colors || [
+        getComputedStyle(document.documentElement).getPropertyValue('--chart-1').trim(),
+        getComputedStyle(document.documentElement).getPropertyValue('--chart-2').trim(),
+        getComputedStyle(document.documentElement).getPropertyValue('--chart-3').trim(),
+        getComputedStyle(document.documentElement).getPropertyValue('--chart-4').trim(),
+        getComputedStyle(document.documentElement).getPropertyValue('--chart-5').trim(),
+        getComputedStyle(document.documentElement).getPropertyValue('--chart-6').trim(),
+      ].filter(c => c);
+
+      const config = {
+        parent: el,
+        type: options.type || 'bar',
+        height: options.height || 250,
+        colors: chartColors,
+        animate: options.animate !== false ? 1 : 0,
+        data: options.data || { labels: [], datasets: [] },
+      };
+
+      if (options.title) config.title = options.title;
+      if (options.axisOptions) config.axisOptions = options.axisOptions;
+      if (options.barOptions) config.barOptions = options.barOptions;
+      if (options.lineOptions) config.lineOptions = options.lineOptions;
+      if (options.tooltipOptions) config.tooltipOptions = options.tooltipOptions;
+      if (options.isNavigable) config.isNavigable = options.isNavigable;
+      if (options.valuesOverPoints) config.valuesOverPoints = options.valuesOverPoints;
+      if (options.maxSlices) config.maxSlices = options.maxSlices;
+
+      const chart = new frappe.Chart(config);
+      _chartInstances[containerId] = chart;
+      return chart;
+    }
+
+    /**
+     * Convenience: render a bar chart.
+     */
+    function renderBarChart(containerId, labels, values, options = {}) {
+      return renderChart(containerId, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{ name: options.name || 'Value', values: values }]
+        },
+        ...options
+      });
+    }
+
+    /**
+     * Convenience: render a line chart.
+     */
+    function renderLineChart(containerId, labels, values, options = {}) {
+      return renderChart(containerId, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{ name: options.name || 'Value', values: values }]
+        },
+        lineOptions: { regionFill: 1, dotSize: 3, ...options.lineOptions },
+        ...options
+      });
+    }
+
+    /**
+     * Convenience: render a pie/donut chart.
+     */
+    function renderPieChart(containerId, labels, values, options = {}) {
+      return renderChart(containerId, {
+        type: options.donut ? 'donut' : 'pie',
+        data: {
+          labels: labels,
+          datasets: [{ values: values }]
+        },
+        maxSlices: options.maxSlices || 10,
+        ...options
+      });
+    }
+
+    /**
+     * Convenience: render a percentage chart (horizontal stacked bar).
+     */
+    function renderPercentageChart(containerId, labels, values, options = {}) {
+      return renderChart(containerId, {
+        type: 'percentage',
+        data: {
+          labels: labels,
+          datasets: [{ values: values }]
+        },
+        ...options
+      });
+    }
+
+    /**
+     * Update an existing chart's data without re-creating it.
+     */
+    function updateChart(containerId, data) {
+      const chart = _chartInstances[containerId];
+      if (chart) {
+        chart.update(data);
+      }
+    }
+"""
 
     def _render_layout(self, layout: list, indent: int = 6) -> str:
         """Render layout components to HTML."""
