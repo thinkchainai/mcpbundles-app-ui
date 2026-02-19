@@ -4,13 +4,13 @@ mcpbundles-app-ui — Declarative MCP App UI builder.
 Define an app in Python, get self-contained HTML with built-in MCP protocol support.
 
 Usage:
-    from mcpbundles_app_ui import App, Stats, Stat, Card
-    from mcpbundles_app_ui.themes import LightTheme
+    from mcpbundles_app_ui import App, LightTheme, Stats, Stat, Card
+    from pathlib import Path
 
     class MyApp(App):
-        theme = LightTheme(accent="#3b82f6")
         name = "My App"
         subtitle = "Analytics overview"
+        theme = LightTheme(accent="#3b82f6")
 
         layout = [
             Stats(
@@ -20,26 +20,67 @@ Usage:
             Card(title="Select an option to explore"),
         ]
 
-    # In resource.py:
-    html = MyApp().render()
+        # Load CSS/JS from files — Path objects are auto-read on render
+        custom_head = Path(__file__).parent / "assets/head.html"
+        custom_scripts = Path(__file__).parent / "assets/scripts.js"
 
-Note: Apps use dynamic navigation with callTool() for data fetching.
-The layout only needs Stats (for preview metrics) and Card (nav grid placeholder).
-Complex visualizations are built dynamically in custom_scripts JavaScript.
+    html = MyApp().render()
 """
 
 from .app import App
 from .components import (
-    Stats,
-    Stat,
+    BarChart,
+    BarList,
     Card,
+    Chart,
+    ComparisonChart,
+    CustomScript,
+    DistributionChart,
+    ErrorBanner,
+    FunnelChart,
+    Grid,
+    ListPicker,
+    LoadingState,
+    Raw,
+    RecentList,
+    RefreshButton,
+    Section,
+    StageList,
+    Stat,
+    Stats,
 )
 from .renderer import AppRenderer
+from .themes import DarkTheme, LightTheme, Theme
 
 __all__ = [
     "App",
     "AppRenderer",
-    "Stats",
-    "Stat",
+    # Themes
+    "Theme",
+    "LightTheme",
+    "DarkTheme",
+    # Layout
+    "Grid",
+    "Section",
     "Card",
+    # Stats
+    "Stat",
+    "Stats",
+    # Charts
+    "Chart",
+    "BarChart",
+    "ComparisonChart",
+    "FunnelChart",
+    "DistributionChart",
+    # Lists
+    "ListPicker",
+    "RecentList",
+    "BarList",
+    "StageList",
+    # Special
+    "ErrorBanner",
+    "RefreshButton",
+    "LoadingState",
+    "Raw",
+    "CustomScript",
 ]
