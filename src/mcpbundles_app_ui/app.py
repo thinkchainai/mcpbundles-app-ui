@@ -3,7 +3,7 @@ Base App class for declarative MCP App UI definitions.
 """
 
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, Optional, Union
+from typing import TYPE_CHECKING, Any, ClassVar, Optional, Union
 
 from .renderer import AppRenderer
 
@@ -22,20 +22,17 @@ class App:
         - layout: List of components to render
         - custom_head: CSS/HTML as a string or Path to a file
         - custom_scripts: JavaScript as a string or Path to a file
+        - tool_name: For chart-engine apps, the MCP tool to call (e.g. "stock_app")
+        - controls: For chart-engine apps, view -> control groups config
+        - controls_defaults: Default values for control keys
 
-    Example:
-        from mcpbundles_app_ui import App, LightTheme, Stats, Stat, Card
-
-        class ActivityHub(App):
-            name = "Activity Hub"
-            subtitle = "Engagement analytics"
-            theme = LightTheme(accent="#3b82f6")
-            layout = [
-                Stats(Stat("preview.total", "Total", primary=True)),
-                Card(title="Select a view"),
-            ]
-            custom_head = Path(__file__).parent / "assets/head.html"
-            custom_scripts = Path(__file__).parent / "assets/scripts.js"
+    Example (chart-engine app):
+        class StockApp(App):
+            name = "Stock Intelligence"
+            theme = DarkTheme(...)
+            tool_name = "stock_app"
+            controls = {"chart": [...], "financials": [...]}
+            controls_defaults = {"period": "6m", "chart_type": ""}
     """
 
     name: ClassVar[str] = "App"
@@ -46,6 +43,10 @@ class App:
 
     custom_head: ClassVar[Optional[Union[str, Path]]] = None
     custom_scripts: ClassVar[Optional[Union[str, Path]]] = None
+
+    tool_name: ClassVar[Optional[str]] = None
+    controls: ClassVar[Optional[dict[str, Any]]] = None
+    controls_defaults: ClassVar[Optional[dict[str, Any]]] = None
 
     def __init__(self):
         pass
@@ -58,6 +59,16 @@ class App:
         if isinstance(value, Path):
             return value.read_text(encoding="utf-8")
         return value
+
+    def _get_app_config(self) -> Optional[dict[str, Any]]:
+        """Build app config for chart-engine apps."""
+        if not self.tool_name or not self.controls:
+            return None
+        return {
+            "toolName": self.tool_name,
+            "controls": self.controls,
+            "defaults": self.controls_defaults or {},
+        }
 
     def render(self) -> str:
         """
@@ -80,6 +91,7 @@ class App:
             layout=self.layout,
             custom_head=self._resolve_content(self.custom_head),
             custom_scripts=self._resolve_content(self.custom_scripts),
+            app_config=self._get_app_config(),
         )
 
     @classmethod
