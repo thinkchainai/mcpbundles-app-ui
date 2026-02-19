@@ -59,8 +59,12 @@ class AppRenderer:
             if app_config
             else ""
         )
-        chart_engine_js = _load_asset("chart-engine.js") if app_config else ""
-        chart_engine_css = _load_asset("chart-engine.css") if app_config else ""
+        has_tabs = bool(app_config and "tabs" in app_config)
+        has_chart = bool(app_config and not has_tabs)
+        chart_engine_js = _load_asset("chart-engine.js") if has_chart else ""
+        chart_engine_css = _load_asset("chart-engine.css") if has_chart else ""
+        tabbed_engine_js = _load_asset("tabbed-engine.js") if has_tabs else ""
+        tabbed_engine_css = _load_asset("tabbed-engine.css") if has_tabs else ""
 
         return f"""<!DOCTYPE html>
 <html lang="en">
@@ -74,6 +78,7 @@ class AppRenderer:
 {_load_asset("base.css")}
 {_load_asset("components.css")}
 {chart_engine_css}
+{tabbed_engine_css}
   </style>
   {custom_head or ''}
 </head>
@@ -99,6 +104,7 @@ class AppRenderer:
 {_load_asset("mcp-client.js")}
 {app_config_js}
 {chart_engine_js}
+{tabbed_engine_js}
 {_load_asset("components.js")}
 {custom_scripts or ''}
 
