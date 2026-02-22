@@ -205,3 +205,33 @@
 .te-risk-band-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
 .te-risk-band-count { font-weight: 600; color: var(--text-primary); width: 80px; text-align: right; flex-shrink: 0; }
 .te-risk-band-pct { color: var(--text-muted); width: 42px; text-align: right; flex-shrink: 0; font-size: 11px; }
+
+/* CVE Analyzer (vuln-lookup) */
+.te-kev-banner { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 6px; margin: 12px 0; font-size: 12px; flex-wrap: wrap; }
+.te-kev-banner-confirmed { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); }
+.te-kev-banner-clear { background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.2); }
+.te-kev-banner-label { font-weight: 600; color: var(--text-primary); flex-shrink: 0; }
+.te-kev-banner-meta { color: var(--text-muted); font-size: 11px; flex: 1; }
+.te-lookup-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.6; margin: 12px 0 4px; }
+.te-lookup-meta { font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.5; }
+.te-lookup-meta-label { color: var(--text-secondary); font-weight: 500; margin-right: 4px; }
+
+/* Scan Triage (vuln-triage) */
+.te-triage-form { display: flex; gap: 8px; margin-bottom: 14px; align-items: flex-start; }
+.te-triage-input {
+  flex: 1; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--bg-card); color: var(--text-secondary); font-size: 13px;
+  outline: none; transition: border-color 0.15s; font-family: inherit; resize: vertical; min-height: 58px;
+}
+.te-triage-input:focus { border-color: var(--accent); }
+.te-triage-input::placeholder { color: var(--text-muted); }
+.te-triage-tier { margin-bottom: 16px; }
+.te-sev-text-medium { color: #eab308; }
+
+/* Vendor Exposure (vuln-vendor) */
+.te-vendor-table { display: flex; flex-direction: column; gap: 4px; }
+.te-vendor-row { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 7px 10px; border-radius: 6px; background: var(--bg-card); transition: background 0.15s; }
+.te-vendor-row:hover { background: var(--bg-hover); }
+.te-vendor-product { width: 160px; flex-shrink: 0; color: var(--text-secondary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.te-vendor-count { font-weight: 700; color: var(--text-primary); width: 30px; text-align: right; flex-shrink: 0; }
+.te-vendor-norw { width: 50px; flex-shrink: 0; }
