@@ -204,6 +204,38 @@ function buildUI() {
 
   buildTabs();
   wireToolbar();
+
+  content.addEventListener('click', function(e) {
+    var el = e.target.closest('.te-cve-link');
+    if (el && el.dataset.cve) navigateToCVE(el.dataset.cve);
+  });
+}
+
+function navigateToCVE(cveId) {
+  var lookupTabId = null, lookupTab = null;
+  for (var i = 0; i < TABS.length; i++) {
+    if (TABS[i].type === 'vuln-lookup') { lookupTabId = TABS[i].id; lookupTab = TABS[i]; break; }
+  }
+  if (!lookupTabId || !lookupTab) return;
+
+  eS.activeTab = lookupTabId;
+  activateTabUI(lookupTabId);
+  document.getElementById('teToolbar').className = 'te-toolbar hidden';
+  document.getElementById('dashboard-title').textContent = 'CVE Analyzer: ' + cveId;
+
+  var ph = lookupTab.searchPlaceholder || 'Enter CVE ID \u2014 e.g. CVE-2021-44228';
+  document.getElementById('teContent').innerHTML =
+    '<div class="te-search-form"><input class="te-search-input" id="teLookupInput" type="text" value="' + escAttr(cveId) + '" placeholder="' + escAttr(ph) + '" /><button class="te-search-btn" id="teLookupBtn">Analyze</button></div>' +
+    '<div id="teLookupResult"><div class="te-loading"><div class="te-spinner"></div><span>Analyzing ' + esc(cveId) + '\u2026</span></div></div>';
+  wireLookup(lookupTab);
+  updateHeaderActions(lookupTabId);
+
+  var queryParam = lookupTab.searchQueryParam || 'cve_id';
+  var args = {}; args[queryParam] = cveId;
+  callTool(lookupTab.tool, args).then(function(res) {
+    var d = extractData(res);
+    if (d) { eS.tabData[lookupTabId] = d; renderVulnLookupResult(d); }
+  }).catch(function(e) { showError(e.message); });
 }
 
 // ======================================================================
@@ -428,6 +460,16 @@ function wireSearch() {
   btn.addEventListener('click', go); inp.addEventListener('keydown', function(e){if(e.key==='Enter')go();});
 }
 
+function cveLink(cveId) {
+  if (!cveId) return '';
+  return '<span class="te-kev-badge te-cve-link" data-cve="' + escAttr(cveId) + '">' + esc(cveId) + '</span>';
+}
+
+function cveLinkEpss(cveId) {
+  if (!cveId) return '';
+  return '<span class="te-epss-cve te-cve-link" data-cve="' + escAttr(cveId) + '">' + esc(cveId) + '</span>';
+}
+
 var SEV_BADGE_LEVELS = { CRITICAL: true, HIGH: true, MEDIUM: true, LOW: true };
 function sevBadgeHtml(sev) {
   var upper = (sev || '').toUpperCase();
@@ -442,7 +484,9 @@ function showSearchItems(data) {
   for (var i = 0; i < results.length; i++) {
     var r = results[i];
     var meta = [r.units, r.seasonal_adjustment].filter(Boolean).join(' \u00B7 ');
-    html += '<div class="te-search-item"><div class="te-search-item-title">' + esc(r.title||r.name||'') + '<span class="te-search-item-id">' + esc(r.id||r.series_id||'') + '</span>' + sevBadgeHtml(r.frequency) + '</div>' + (meta ? '<div class="te-search-item-meta">' + esc(meta) + '</div>' : '') + '</div>';
+    var idStr = r.id || r.series_id || '';
+    var idHtml = idStr ? '<span class="te-search-item-id te-cve-link" data-cve="' + escAttr(idStr) + '">' + esc(idStr) + '</span>' : '';
+    html += '<div class="te-search-item"><div class="te-search-item-title">' + esc(r.title||r.name||'') + idHtml + sevBadgeHtml(r.frequency) + '</div>' + (meta ? '<div class="te-search-item-meta">' + esc(meta) + '</div>' : '') + '</div>';
   }
   el.innerHTML = html;
 }
@@ -479,7 +523,7 @@ function renderVulnBriefingView(data) {
       var e = kevRecent[i];
       var isRW = e.ransomware_use === 'Known';
       kevHtml += '<div class="te-kev-entry">' +
-        '<span class="te-kev-badge">' + esc(e.cve_id || '') + '</span>' +
+        cveLink(e.cve_id) +
         '<span class="te-kev-vendor">' + esc((e.vendor || '') + (e.product ? ' \u00B7 ' + e.product : '')) + '</span>' +
         (isRW ? '<span class="te-kev-ransomware">\u26A0 Ransomware</span>' : '') +
         '<span class="te-kev-date">' + esc(e.date_added || '') + '</span>' +
@@ -497,7 +541,7 @@ function renderVulnBriefingView(data) {
       var lvl = (s.risk_level || 'low').toLowerCase();
       epssHtml += '<div class="te-epss-entry">' +
         '<span class="te-vuln-severity te-sev-' + lvl + '">' + esc(s.risk_level || '') + '</span>' +
-        '<span class="te-epss-cve">' + esc(s.cve || '') + '</span>' +
+        cveLinkEpss(s.cve) +
         '<div class="te-epss-bar-wrap"><div class="te-epss-bar te-sev-bar-' + lvl + '" style="width:' + pct + '%"></div></div>' +
         '<span class="te-epss-pct">' + pct + '%</span>' +
         '</div>';
@@ -525,7 +569,7 @@ function renderVulnListView(data) {
     var e = entries[i];
     var isRW = e.ransomware_use === 'Known';
     listHtml += '<div class="te-kev-entry te-kev-entry-full">' +
-      '<span class="te-kev-badge">' + esc(e.cve_id || '') + '</span>' +
+      cveLink(e.cve_id) +
       '<div class="te-kev-detail">' +
         '<div class="te-kev-name">' + esc(e.vulnerability_name || ((e.vendor || '') + ' ' + (e.product || ''))) + '</div>' +
         '<div class="te-kev-meta">' + esc(e.vendor || '') + (e.product ? ' \u00B7 ' + e.product : '') + (e.due_date ? ' \u00B7 Due: ' + e.due_date : '') + '</div>' +
@@ -726,7 +770,7 @@ function renderVulnTriageResult(data) {
     tiersHtml += '<div class="te-triage-tier"><div class="te-section-label"><span class="te-section-label-text" style="color:' + tierColors[tier] + '">' + tier + '</span><span class="te-section-label-count">' + cves.length + ' CVE' + (cves.length !== 1 ? 's' : '') + '</span></div><div class="te-epss-list">';
     for (var ci = 0; ci < cves.length; ci++) {
       var s = cves[ci], pct = Math.round((s.epss_score || 0) * 100), lvl = (s.risk_level || 'low').toLowerCase();
-      tiersHtml += '<div class="te-epss-entry"><span class="te-vuln-severity te-sev-' + lvl + '">' + esc(s.risk_level || '') + '</span><span class="te-epss-cve">' + esc(s.cve || '') + '</span><div class="te-epss-bar-wrap"><div class="te-epss-bar te-sev-bar-' + lvl + '" style="width:' + pct + '%"></div></div><span class="te-epss-pct">' + pct + '%</span></div>';
+      tiersHtml += '<div class="te-epss-entry"><span class="te-vuln-severity te-sev-' + lvl + '">' + esc(s.risk_level || '') + '</span>' + cveLinkEpss(s.cve) + '<div class="te-epss-bar-wrap"><div class="te-epss-bar te-sev-bar-' + lvl + '" style="width:' + pct + '%"></div></div><span class="te-epss-pct">' + pct + '%</span></div>';
     }
     tiersHtml += '</div></div>';
   }

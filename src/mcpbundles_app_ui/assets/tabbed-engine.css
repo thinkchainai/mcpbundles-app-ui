@@ -206,6 +206,15 @@
 .te-risk-band-count { font-weight: 600; color: var(--text-primary); width: 80px; text-align: right; flex-shrink: 0; }
 .te-risk-band-pct { color: var(--text-muted); width: 42px; text-align: right; flex-shrink: 0; font-size: 11px; }
 
+/* Clickable CVE IDs */
+.te-cve-link {
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, opacity 0.12s;
+}
+.te-kev-badge.te-cve-link:hover { background: rgba(59,130,246,0.18); color: #93c5fd; }
+.te-epss-cve.te-cve-link:hover { color: var(--accent); }
+.te-search-item-id.te-cve-link:hover { color: #93c5fd; }
+
 /* CVE Analyzer (vuln-lookup) */
 .te-kev-banner { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 6px; margin: 12px 0; font-size: 12px; flex-wrap: wrap; }
 .te-kev-banner-confirmed { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); }
