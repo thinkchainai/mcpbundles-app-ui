@@ -70,10 +70,27 @@ class App:
             return value.read_text(encoding="utf-8")
         return value
 
-    def _get_app_config(self) -> Optional[dict[str, Any]]:
+    @staticmethod
+    def _apply_slug_map(config: dict[str, Any], slug_map: dict[str, str]) -> dict[str, Any]:
+        """Remap canonical tool names to host-specific slugs in the config."""
+        if "toolName" in config and config["toolName"] in slug_map:
+            config["toolName"] = slug_map[config["toolName"]]
+        if "tabs" in config:
+            for tab in config["tabs"]:
+                if tab.get("tool") and tab["tool"] in slug_map:
+                    tab["tool"] = slug_map[tab["tool"]]
+        if "toolCatalog" in config:
+            for entry in config["toolCatalog"]:
+                if entry.get("name") and entry["name"] in slug_map:
+                    entry["name"] = slug_map[entry["name"]]
+        return config
+
+    def _get_app_config(
+        self, tool_slug_map: Optional[dict[str, str]] = None
+    ) -> Optional[dict[str, Any]]:
         """Build app config for chart-engine or tabbed-engine apps."""
         if self.tabs:
-            config: dict[str, Any] = {"tabs": self.tabs}
+            config: dict[str, Any] = {"tabs": [dict(t) for t in self.tabs]}
             if self.tool_name:
                 config["toolName"] = self.tool_name
             if self.periods:
@@ -81,7 +98,7 @@ class App:
             if self.default_period:
                 config["defaultPeriod"] = self.default_period
             if self.tool_catalog:
-                config["toolCatalog"] = self.tool_catalog
+                config["toolCatalog"] = [dict(e) for e in self.tool_catalog]
             if self.tool_catalog_intro:
                 config["toolCatalogIntro"] = self.tool_catalog_intro
             if self.footer_text:
@@ -89,22 +106,32 @@ class App:
             theme = self.theme
             if theme and hasattr(theme, "chart_colors") and theme.chart_colors:
                 config["colors"] = theme.chart_colors
+            if tool_slug_map:
+                config = self._apply_slug_map(config, tool_slug_map)
             return config
 
         if self.tool_name and self.controls:
-            return {
+            config = {
                 "toolName": self.tool_name,
                 "controls": self.controls,
                 "defaults": self.controls_defaults or {},
             }
+            if tool_slug_map:
+                config = self._apply_slug_map(config, tool_slug_map)
+            return config
 
         return None
 
-    def render(self) -> str:
+    def render(self, tool_slug_map: Optional[dict[str, str]] = None) -> str:
         """
         Generate complete HTML document for this app.
 
         Path objects in custom_head/custom_scripts are read automatically.
+
+        Args:
+            tool_slug_map: Optional mapping of canonical tool names to
+                host-specific slugs. When provided, all tool name references
+                in the app config are remapped before embedding in the HTML.
 
         Returns:
             str: Complete HTML5 document with embedded CSS/JS,
@@ -121,7 +148,7 @@ class App:
             layout=self.layout,
             custom_head=self._resolve_content(self.custom_head),
             custom_scripts=self._resolve_content(self.custom_scripts),
-            app_config=self._get_app_config(),
+            app_config=self._get_app_config(tool_slug_map),
         )
 
     @classmethod

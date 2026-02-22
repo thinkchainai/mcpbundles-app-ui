@@ -160,3 +160,48 @@
 
 /* Updated timestamp */
 .te-updated { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 10px; }
+
+/* Vulnerability Intelligence views */
+.te-vuln-stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.te-vuln-stat { background: var(--bg-card); border-radius: 8px; padding: 14px; }
+.te-vuln-stat-value { font-size: 32px; font-weight: 700; color: var(--text-primary); line-height: 1; }
+.te-vuln-stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; margin-top: 4px; }
+.te-vuln-stat-badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; background: rgba(239,68,68,0.15); color: #fca5a5; margin-left: 4px; font-weight: 600; }
+.te-vuln-stat-desc { font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.5; }
+
+.te-kev-list { display: flex; flex-direction: column; gap: 4px; }
+.te-kev-entry { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 6px; background: var(--bg-card); font-size: 12px; flex-wrap: wrap; transition: background 0.15s; }
+.te-kev-entry:hover { background: var(--bg-hover); }
+.te-kev-entry-full { align-items: flex-start; gap: 10px; }
+.te-kev-badge { font-family: monospace; font-size: 11px; color: var(--accent); font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+.te-kev-vendor { color: var(--text-secondary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.te-kev-detail { flex: 1; min-width: 0; }
+.te-kev-name { font-size: 12px; color: var(--text-secondary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.te-kev-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.te-kev-ransomware { font-size: 10px; color: #fca5a5; background: rgba(239,68,68,0.15); padding: 1px 6px; border-radius: 3px; white-space: nowrap; flex-shrink: 0; font-weight: 600; }
+.te-kev-date { font-size: 11px; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
+
+.te-epss-list { display: flex; flex-direction: column; gap: 8px; }
+.te-epss-entry { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.te-epss-cve { font-family: monospace; font-size: 11px; color: var(--text-muted); width: 130px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.te-epss-bar-wrap { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.te-epss-bar { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+.te-epss-pct { font-size: 12px; font-weight: 700; color: var(--text-secondary); width: 38px; text-align: right; flex-shrink: 0; }
+
+.te-vuln-severity { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 3px; white-space: nowrap; flex-shrink: 0; width: 58px; text-align: center; letter-spacing: 0.02em; }
+.te-sev-critical { background: rgba(239,68,68,0.15); color: #fca5a5; }
+.te-sev-high { background: rgba(249,115,22,0.15); color: #fdba74; }
+.te-sev-medium { background: rgba(234,179,8,0.15); color: #fde047; }
+.te-sev-low { background: rgba(16,185,129,0.15); color: #6ee7b7; }
+.te-sev-bar-critical { background: var(--error); }
+.te-sev-bar-high { background: #f97316; }
+.te-sev-bar-medium { background: var(--warning); }
+.te-sev-bar-low { background: var(--success); }
+
+.te-risk-bands { display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; }
+.te-risk-band { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.te-risk-band-label { font-weight: 700; font-size: 11px; width: 68px; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.04em; }
+.te-risk-band-track { flex: 1; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+.te-risk-band-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+.te-risk-band-count { font-weight: 600; color: var(--text-primary); width: 80px; text-align: right; flex-shrink: 0; }
+.te-risk-band-pct { color: var(--text-muted); width: 42px; text-align: right; flex-shrink: 0; font-size: 11px; }

@@ -259,6 +259,9 @@ function onInitialData(data) {
     for (var i = 0; i < TABS.length; i++) {
       var t = TABS[i];
       if (t.type === 'dashboard' && data.recession_probability) { tabId = t.id; break; }
+      if (t.type === 'vuln-briefing' && (data.kev_recent || data.top_epss)) { tabId = t.id; break; }
+      if (t.type === 'vuln-list' && data.entries && data.total_in_window !== undefined) { tabId = t.id; break; }
+      if (t.type === 'vuln-stats' && data.risk_bands) { tabId = t.id; break; }
       if (t.type === 'search' && data.query) { tabId = t.id; break; }
       if (t.type === 'banking' && data.health_summary) { tabId = t.id; break; }
       if (t.type === 'chart' && data.series) { tabId = t.id; break; }
@@ -283,6 +286,9 @@ function renderTabContent(tabId, data) {
   else if (tab.type === 'chart') renderChartView(data);
   else if (tab.type === 'banking') renderBankingView(data);
   else if (tab.type === 'search') renderSearchResults(data);
+  else if (tab.type === 'vuln-briefing') renderVulnBriefingView(data);
+  else if (tab.type === 'vuln-list') renderVulnListView(data);
+  else if (tab.type === 'vuln-stats') renderVulnStatsView(data);
 }
 
 function updateHeaderActions(tabId) {
@@ -405,7 +411,11 @@ function wireSearch() {
   for (var i = 0; i < TABS.length; i++) { if (TABS[i].type === 'search') { searchTab = TABS[i]; break; } }
   if (!searchTab) return;
   function go() { var q = inp.value.trim(); if(!q)return; btn.disabled=true; btn.textContent='Searching...';
-    callTool(searchTab.tool,{query:q,limit:20}).then(function(res){var d=extractData(res);if(d){eS.tabData[searchTab.id]=d;showSearchItems(d);document.getElementById('dashboard-title').textContent='Search: '+q;}}).catch(function(e){showError(e.message);}).finally(function(){btn.disabled=false;btn.textContent='Search';}); }
+    var args = {};
+    var queryParam = searchTab.searchQueryParam || 'query';
+    var limitParam = searchTab.searchLimitParam || 'limit';
+    args[queryParam] = q; args[limitParam] = 20;
+    callTool(searchTab.tool,args).then(function(res){var d=extractData(res);if(d){eS.tabData[searchTab.id]=d;showSearchItems(d);document.getElementById('dashboard-title').textContent='Search: '+q;}}).catch(function(e){showError(e.message);}).finally(function(){btn.disabled=false;btn.textContent='Search';}); }
   btn.addEventListener('click', go); inp.addEventListener('keydown', function(e){if(e.key==='Enter')go();});
 }
 
@@ -415,6 +425,143 @@ function showSearchItems(data) {
   var html = '';
   for (var i = 0; i < results.length; i++) { var r = results[i]; html += '<div class="te-search-item"><div class="te-search-item-title">' + esc(r.title||r.name||'') + '<span class="te-search-item-id">' + esc(r.id||r.series_id||'') + '</span></div><div class="te-search-item-meta">' + esc([r.frequency,r.units,r.seasonal_adjustment].filter(Boolean).join(' \u00B7 ')) + '</div></div>'; }
   el.innerHTML = html;
+}
+
+// ======================================================================
+// Vulnerability Briefing (Threat Overview)
+// ======================================================================
+function renderVulnBriefingView(data) {
+  document.getElementById('dashboard-title').textContent = 'Threat Briefing';
+  var c = document.getElementById('teContent');
+  var kevRecent = data.kev_recent || [];
+  var topEpss = data.top_epss || [];
+
+  var statsHtml =
+    '<div class="te-vuln-stats-row">' +
+      '<div class="te-vuln-stat">' +
+        '<div class="te-vuln-stat-value">' + esc(String(data.new_cves_7d !== undefined ? data.new_cves_7d.toLocaleString() : '\u2014')) + '</div>' +
+        '<div class="te-vuln-stat-label">New CVEs (last 7 days)</div>' +
+      '</div>' +
+      '<div class="te-vuln-stat">' +
+        '<div class="te-vuln-stat-value">' + esc(String(data.kev_total !== undefined ? data.kev_total.toLocaleString() : '\u2014')) + '</div>' +
+        '<div class="te-vuln-stat-label">CISA KEV Total' + (data.kev_added_7d ? ' <span class="te-vuln-stat-badge">+' + data.kev_added_7d + ' this week</span>' : '') + '</div>' +
+      '</div>' +
+      (data.ransomware_linked ? '<div class="te-vuln-stat">' +
+        '<div class="te-vuln-stat-value">' + esc(String(data.ransomware_linked.toLocaleString())) + '</div>' +
+        '<div class="te-vuln-stat-label">KEV Ransomware-Linked</div>' +
+      '</div>' : '') +
+    '</div>';
+
+  var kevHtml = '';
+  if (kevRecent.length) {
+    kevHtml = '<div class="te-section-label"><span class="te-section-label-text">Just Added to CISA KEV</span><span class="te-section-label-count">confirmed exploited in the wild</span></div><div class="te-kev-list">';
+    for (var i = 0; i < kevRecent.length; i++) {
+      var e = kevRecent[i];
+      var isRW = e.ransomware_use === 'Known';
+      kevHtml += '<div class="te-kev-entry">' +
+        '<span class="te-kev-badge">' + esc(e.cve_id || '') + '</span>' +
+        '<span class="te-kev-vendor">' + esc((e.vendor || '') + (e.product ? ' \u00B7 ' + e.product : '')) + '</span>' +
+        (isRW ? '<span class="te-kev-ransomware">\u26A0 Ransomware</span>' : '') +
+        '<span class="te-kev-date">' + esc(e.date_added || '') + '</span>' +
+        '</div>';
+    }
+    kevHtml += '</div>';
+  }
+
+  var epssHtml = '';
+  if (topEpss.length) {
+    epssHtml = '<div class="te-section-label" style="margin-top:16px"><span class="te-section-label-text">Highest Exploit Probability</span><span class="te-section-label-count">most likely exploited in next 30 days</span></div><div class="te-epss-list">';
+    for (var j = 0; j < topEpss.length; j++) {
+      var s = topEpss[j];
+      var pct = Math.round((s.epss_score || 0) * 100);
+      var lvl = (s.risk_level || 'low').toLowerCase();
+      epssHtml += '<div class="te-epss-entry">' +
+        '<span class="te-vuln-severity te-sev-' + lvl + '">' + esc(s.risk_level || '') + '</span>' +
+        '<span class="te-epss-cve">' + esc(s.cve || '') + '</span>' +
+        '<div class="te-epss-bar-wrap"><div class="te-epss-bar te-sev-bar-' + lvl + '" style="width:' + pct + '%"></div></div>' +
+        '<span class="te-epss-pct">' + pct + '%</span>' +
+        '</div>';
+    }
+    epssHtml += '</div>';
+  }
+
+  c.innerHTML = statsHtml + kevHtml + epssHtml + '<div class="te-summary">' + esc(data.summary || '') + '</div><div class="te-updated">Updated ' + new Date().toLocaleTimeString() + '</div>';
+}
+
+// ======================================================================
+// Vulnerability List (KEV Feed)
+// ======================================================================
+function renderVulnListView(data) {
+  document.getElementById('dashboard-title').textContent = 'Actively Exploited';
+  var c = document.getElementById('teContent');
+  var entries = data.entries || [];
+  var header = '<div class="te-section-label"><span class="te-section-label-text">CISA Known Exploited Vulnerabilities</span><span class="te-section-label-count">' + esc(String(data.total_in_window || entries.length)) + ' added in past ' + esc(String(data.days_back || 30)) + ' days</span></div>';
+  if (!entries.length) {
+    c.innerHTML = header + '<div class="te-loading"><span>No entries in this window</span></div>';
+    return;
+  }
+  var listHtml = '<div class="te-kev-list">';
+  for (var i = 0; i < entries.length; i++) {
+    var e = entries[i];
+    var isRW = e.ransomware_use === 'Known';
+    listHtml += '<div class="te-kev-entry te-kev-entry-full">' +
+      '<span class="te-kev-badge">' + esc(e.cve_id || '') + '</span>' +
+      '<div class="te-kev-detail">' +
+        '<div class="te-kev-name">' + esc(e.vulnerability_name || ((e.vendor || '') + ' ' + (e.product || ''))) + '</div>' +
+        '<div class="te-kev-meta">' + esc(e.vendor || '') + (e.product ? ' \u00B7 ' + e.product : '') + (e.due_date ? ' \u00B7 Due: ' + e.due_date : '') + '</div>' +
+      '</div>' +
+      (isRW ? '<span class="te-kev-ransomware">\u26A0 Ransomware</span>' : '') +
+      '<span class="te-kev-date">' + esc(e.date_added || '') + '</span>' +
+      '</div>';
+  }
+  listHtml += '</div>';
+  c.innerHTML = header + listHtml;
+}
+
+// ======================================================================
+// Vulnerability Stats (EPSS Risk Landscape)
+// ======================================================================
+function renderVulnStatsView(data) {
+  document.getElementById('dashboard-title').textContent = 'Risk Landscape';
+  var c = document.getElementById('teContent');
+  var bands = data.risk_bands || {};
+  var total = data.total_scored || 0;
+  var order = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+  var colors = { CRITICAL: 'var(--error)', HIGH: '#f97316', MEDIUM: 'var(--warning)', LOW: 'var(--success)' };
+
+  var html = '<div class="te-section-label"><span class="te-section-label-text">EPSS Risk Distribution</span><span class="te-section-label-count">' + total.toLocaleString() + ' CVEs scored</span></div><div class="te-risk-bands">';
+  for (var i = 0; i < order.length; i++) {
+    var tier = order[i];
+    var band = bands[tier] || {};
+    var count = band.count || 0;
+    var pctNum = total > 0 ? (count / total) * 100 : 0;
+    var barWidth = Math.min(pctNum * 4, 100);
+    html += '<div class="te-risk-band">' +
+      '<span class="te-risk-band-label" style="color:' + colors[tier] + '">' + tier + '</span>' +
+      '<div class="te-risk-band-track"><div class="te-risk-band-fill" style="width:' + barWidth + '%;background:' + colors[tier] + '"></div></div>' +
+      '<span class="te-risk-band-count">' + count.toLocaleString() + '</span>' +
+      '<span class="te-risk-band-pct">' + esc(band.percent_of_total || '0%') + '</span>' +
+      '</div>';
+  }
+  html += '</div>';
+
+  var explanations = [
+    { tier: 'CRITICAL', color: 'var(--error)', desc: 'EPSS > 70% \u2014 very high probability of exploitation in 30 days.' },
+    { tier: 'HIGH', color: '#f97316', desc: 'EPSS 40\u201370% \u2014 elevated risk. Prioritize if in your tech stack.' },
+    { tier: 'MEDIUM', color: 'var(--warning)', desc: 'EPSS 10\u201340% \u2014 moderate risk. Patch in normal cycle.' },
+    { tier: 'LOW', color: 'var(--success)', desc: 'EPSS < 10% \u2014 low exploitation probability. Routine handling.' },
+  ];
+  html += '<div class="te-section-label" style="margin-top:16px"><span class="te-section-label-text">EPSS Score Bands Explained</span></div><div class="te-vuln-stats-row">';
+  for (var j = 0; j < explanations.length; j++) {
+    var ex = explanations[j];
+    html += '<div class="te-vuln-stat" style="border-left:3px solid ' + ex.color + '">' +
+      '<div class="te-vuln-stat-label" style="color:' + ex.color + ';font-weight:700;font-size:12px">' + ex.tier + '</div>' +
+      '<div class="te-vuln-stat-desc">' + esc(ex.desc) + '</div>' +
+      '</div>';
+  }
+  html += '</div>';
+  html += '<div class="te-summary">' + esc(data.summary || ('EPSS score distribution across ' + total.toLocaleString() + ' scored CVEs from FIRST.org.')) + '</div>';
+  c.innerHTML = html;
 }
 
 // ======================================================================
