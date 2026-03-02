@@ -300,6 +300,8 @@ function onInitialData(data) {
       if (t.type === 'vuln-lookup' && data.cve_id && data.risk) { tabId = t.id; break; }
       if (t.type === 'vuln-triage' && data.buckets) { tabId = t.id; break; }
       if (t.type === 'vuln-vendor' && data.vendor && data.products) { tabId = t.id; break; }
+      if (t.type === 'vuln-stack' && data.stack !== undefined) { tabId = t.id; break; }
+      if (t.type === 'vuln-watchlist' && data.watchlist !== undefined) { tabId = t.id; break; }
       if (t.type === 'search' && data.query) { tabId = t.id; break; }
       if (t.type === 'banking' && data.health_summary) { tabId = t.id; break; }
       if (t.type === 'chart' && data.series) { tabId = t.id; break; }
@@ -330,6 +332,8 @@ function renderTabContent(tabId, data) {
   else if (tab.type === 'vuln-lookup') renderVulnLookupResult(data);
   else if (tab.type === 'vuln-triage') renderVulnTriageResult(data);
   else if (tab.type === 'vuln-vendor') renderVulnVendorResult(data);
+  else if (tab.type === 'vuln-stack') renderVulnStackView(data);
+  else if (tab.type === 'vuln-watchlist') renderVulnWatchlistView(data);
 }
 
 function updateHeaderActions(tabId) {
@@ -549,7 +553,17 @@ function renderVulnBriefingView(data) {
     epssHtml += '</div>';
   }
 
-  c.innerHTML = statsHtml + kevHtml + epssHtml + '<div class="te-summary">' + esc(data.summary || '') + '</div><div class="te-updated">Updated ' + new Date().toLocaleTimeString() + '</div>';
+  var briefingHtml = '';
+  var personalizedBriefing = data.personalized_briefing || [];
+  if (personalizedBriefing.length) {
+    briefingHtml = '<div class="te-section-label" style="margin-top:16px"><span class="te-section-label-text">Your Briefing</span><span class="te-section-label-count">personalized alerts</span></div><div class="te-briefing-alerts">';
+    for (var bi = 0; bi < personalizedBriefing.length; bi++) {
+      briefingHtml += '<div class="te-briefing-alert">' + esc(personalizedBriefing[bi]) + '</div>';
+    }
+    briefingHtml += '</div>';
+  }
+
+  c.innerHTML = (briefingHtml || '') + statsHtml + kevHtml + epssHtml + '<div class="te-summary">' + esc(data.summary || '') + '</div><div class="te-updated">Updated ' + new Date().toLocaleTimeString() + '</div>';
 }
 
 // ======================================================================
@@ -848,6 +862,110 @@ function renderVulnVendorResult(data) {
   tableHtml += '</div>';
 
   resultEl.innerHTML = statsHtml + tableHtml;
+}
+
+// ======================================================================
+// My Stack (vuln-stack)
+// ======================================================================
+function renderVulnStackView(data) {
+  document.getElementById('dashboard-title').textContent = 'My Stack';
+  var c = document.getElementById('teContent');
+  var stack = data.stack || [];
+
+  if (!stack.length) {
+    c.innerHTML =
+      '<div class="te-prompt">' +
+        '<span class="te-prompt-text">No technologies configured yet</span>' +
+        '<span class="te-prompt-hint">Tell your AI: \u201CAdd nginx:1.25, postgresql:16, redis:7 to my stack\u201D<br>Every CVE lookup, scan triage, and briefing will automatically flag threats to your infrastructure.</span>' +
+      '</div>';
+    return;
+  }
+
+  var statsHtml = '<div class="te-vuln-stats-row">' +
+    '<div class="te-vuln-stat"><div class="te-vuln-stat-value">' + stack.length + '</div><div class="te-vuln-stat-label">Technologies Monitored</div></div>' +
+    '</div>';
+
+  var listHtml = '<div class="te-section-label"><span class="te-section-label-text">Your Technology Stack</span><span class="te-section-label-count">CVE matches flagged automatically</span></div><div class="te-stack-list">';
+  for (var i = 0; i < stack.length; i++) {
+    var entry = stack[i];
+    var product = entry.product || '';
+    var version = entry.version && entry.version !== '*' ? entry.version : '';
+    var vendor = entry.vendor || '';
+    var label = product + (version ? ' ' + version : '');
+    listHtml += '<div class="te-stack-entry">' +
+      '<span class="te-stack-product">' + esc(label) + '</span>' +
+      (vendor ? '<span class="te-stack-vendor">' + esc(vendor) + '</span>' : '') +
+      '<span class="te-stack-cpe">' + esc(entry.cpe_pattern || '') + '</span>' +
+      '</div>';
+  }
+  listHtml += '</div>';
+
+  c.innerHTML = statsHtml + listHtml +
+    '<div class="te-summary">Tell your AI to add or remove technologies. Scan triage and CVE lookups cross-reference this list automatically.</div>' +
+    '<div class="te-updated">Updated ' + new Date().toLocaleTimeString() + '</div>';
+}
+
+// ======================================================================
+// Watchlist (vuln-watchlist)
+// ======================================================================
+function renderVulnWatchlistView(data) {
+  document.getElementById('dashboard-title').textContent = 'Watchlist';
+  var c = document.getElementById('teContent');
+  var watchlist = data.watchlist || [];
+
+  if (!watchlist.length) {
+    c.innerHTML =
+      '<div class="te-prompt">' +
+        '<span class="te-prompt-text">No CVEs on your watchlist</span>' +
+        '<span class="te-prompt-hint">Tell your AI: \u201CWatch CVE-2024-3094, CVE-2024-21762\u201D<br>Baseline EPSS and KEV scores are captured immediately. Future checks report score changes and new exploitation activity.</span>' +
+      '</div>';
+    return;
+  }
+
+  var critCount = 0, highCount = 0, kevCount = 0;
+  for (var si = 0; si < watchlist.length; si++) {
+    var tier = (watchlist[si].last_risk_tier || '').toUpperCase();
+    if (tier === 'CRITICAL') critCount++;
+    else if (tier === 'HIGH') highCount++;
+    if (watchlist[si].last_in_kev) kevCount++;
+  }
+
+  var statsHtml = '<div class="te-vuln-stats-row">' +
+    '<div class="te-vuln-stat"><div class="te-vuln-stat-value">' + watchlist.length + '</div><div class="te-vuln-stat-label">CVEs Watched</div></div>' +
+    (critCount ? '<div class="te-vuln-stat"><div class="te-vuln-stat-value" style="color:#ef4444">' + critCount + '</div><div class="te-vuln-stat-label">Critical Risk</div></div>' : '') +
+    (highCount ? '<div class="te-vuln-stat"><div class="te-vuln-stat-value" style="color:#f97316">' + highCount + '</div><div class="te-vuln-stat-label">High Risk</div></div>' : '') +
+    (kevCount ? '<div class="te-vuln-stat"><div class="te-vuln-stat-value" style="color:#ef4444">' + kevCount + '</div><div class="te-vuln-stat-label">In CISA KEV</div></div>' : '') +
+    '</div>';
+
+  var listHtml = '<div class="te-section-label"><span class="te-section-label-text">Watched CVEs</span><span class="te-section-label-count">baseline tracked \u00B7 deltas on refresh</span></div><div class="te-watchlist">';
+  for (var i = 0; i < watchlist.length; i++) {
+    var w = watchlist[i];
+    var riskTier = (w.last_risk_tier || 'LOW').toUpperCase();
+    var epssScore = w.last_epss_score;
+    var epssPct = epssScore !== null && epssScore !== undefined ? Math.round(epssScore * 100) + '%' : '\u2014';
+    var composite = w.last_composite_score !== null && w.last_composite_score !== undefined ? w.last_composite_score.toFixed(1) : '\u2014';
+    var daysStr = w.days_on_watchlist !== undefined ? w.days_on_watchlist + 'd' : '';
+
+    var addedDate = '';
+    if (w.added_at) {
+      try { addedDate = new Date(w.added_at).toLocaleDateString('en', { month: 'short', day: 'numeric' }); } catch(e) {}
+    }
+
+    listHtml += '<div class="te-watchlist-entry">' +
+      '<span class="te-vuln-severity te-sev-' + riskTier.toLowerCase() + '">' + riskTier + '</span>' +
+      cveLink(w.cve_id) +
+      '<span class="te-watchlist-epss">EPSS ' + esc(epssPct) + '</span>' +
+      '<span class="te-watchlist-composite">' + esc(composite) + '/10</span>' +
+      (w.last_in_kev ? '<span class="te-kev-ransomware">KEV</span>' : '') +
+      '<span class="te-watchlist-meta">' + esc(daysStr) + (addedDate ? ' \u00B7 ' + addedDate : '') + '</span>' +
+      (w.notes ? '<span class="te-watchlist-notes">' + esc(w.notes) + '</span>' : '') +
+      '</div>';
+  }
+  listHtml += '</div>';
+
+  c.innerHTML = statsHtml + listHtml +
+    '<div class="te-summary">Tell your AI \u201Ccheck my watchlist\u201D to refresh live EPSS + KEV scores and see what changed.</div>' +
+    '<div class="te-updated">Updated ' + new Date().toLocaleTimeString() + '</div>';
 }
 
 // ======================================================================
