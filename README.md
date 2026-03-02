@@ -34,7 +34,7 @@ html = MyApp().render()
 
 - **Declarative components**: `Stats`, `Stat`, `Card`, `Grid`, `Chart.bar()`, `BarList`, `RecentList`, and more
 - **Theme system**: `LightTheme` and `DarkTheme` with customizable accent colors, fonts, and all design tokens
-- **Interactive charts**: Built-in [Frappe Charts](https://frappe.io/charts) (SVG, CSP-safe, zero dependencies) — bar, line, pie, donut, percentage, heatmap
+- **Interactive charts**: Built-in canvas chart engine (18 chart types, CSP-safe, zero dependencies) with declarative Python components
 - **MCP protocol client**: Built-in JavaScript for `initializeMCP()`, `callTool()`, `sendMessage()`, `askAI()`
 - **Navigation**: Breadcrumb system with `setBreadcrumbs()`, `pushBreadcrumb()`, `popBreadcrumb()`
 - **Loading states**: `showLoading()`, `hideLoading()`, `withLoading()`, `paginateAll()`
@@ -45,42 +45,25 @@ html = MyApp().render()
 
 ## Charts
 
-Built-in [Frappe Charts](https://frappe.io/charts) provides real interactive SVG charts. Available globally in `custom_scripts`:
+Charts are defined declaratively in your Python layout using `Chart` factory methods:
 
-```javascript
-// Bar chart
-renderBarChart('container-id', ['Mon', 'Tue', 'Wed'], [10, 20, 15]);
+```python
+from mcpbundles_app_ui import Chart, Grid
 
-// Line chart with area fill
-renderLineChart('container-id', ['Jan', 'Feb', 'Mar'], [100, 150, 130]);
-
-// Pie chart
-renderPieChart('container-id', ['Chrome', 'Firefox', 'Safari'], [60, 25, 15]);
-
-// Donut chart
-renderPieChart('container-id', labels, values, { donut: true });
-
-// Percentage chart (horizontal stacked bar)
-renderPercentageChart('container-id', labels, values);
-
-// Full control
-renderChart('container-id', {
-  type: 'bar',
-  data: {
-    labels: ['Q1', 'Q2', 'Q3', 'Q4'],
-    datasets: [
-      { name: 'Revenue', values: [100, 200, 150, 300] },
-      { name: 'Costs', values: [80, 150, 120, 200] }
-    ]
-  },
-  colors: ['#3b82f6', '#ef4444'],
-  height: 300,
-  barOptions: { stacked: true }
-});
-
-// Update existing chart data
-updateChart('container-id', newData);
+layout = [
+    Grid(cols=2)(
+        Chart.bar("data.byMonth", title="Monthly Revenue"),
+        Chart.comparison("data.thisWeek", "data.lastWeek", title="Week over Week"),
+    ),
+    Chart.funnel("data.pipeline", title="Sales Pipeline"),
+    Chart.distribution("data.byCategory", title="Category Breakdown"),
+]
 ```
+
+The library includes two rendering engines:
+
+- **Chart engine** — 18 canvas chart types (candlestick, line, area, bar, column, dual axes, scatter, pie, treemap, radar, histogram, heatmap, funnel, table, and 4 card types). Used by chart-driven apps where the user controls views via dropdowns and selectors.
+- **Tabbed engine** — Multi-tool apps where each tab calls a different MCP tool. Charts render within tab content areas with a shared period toolbar.
 
 Charts automatically use the app's theme colors (`--chart-1` through `--chart-6`).
 
@@ -93,13 +76,17 @@ Charts automatically use the app's theme colors (`--chart-1` through `--chart-6`
 | `Stat` | Single statistic with data binding |
 | `Card` | Container with optional title |
 | `Grid` | Grid layout (2-4 columns) |
+| `Section` | Named section with header and subtitle |
 | `Chart.bar()` | Bar chart with data binding |
-| `Chart.comparison()` | Side-by-side comparison |
-| `Chart.funnel()` | Pipeline/funnel chart |
+| `Chart.comparison()` | Side-by-side comparison of two values |
+| `Chart.funnel()` | Pipeline/funnel stage chart |
+| `Chart.distribution()` | Distribution breakdown by category |
+| `ListPicker` | List selection component with callback |
 | `BarList` | Horizontal bar ranking list |
 | `RecentList` | Recent items list |
-| `StageList` | Pipeline stage list |
+| `StageList` | Pipeline stage list with bars |
 | `Raw` | Escape hatch for custom HTML |
+| `CustomScript` | Inject custom JavaScript |
 
 ## Themes
 

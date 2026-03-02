@@ -1,16 +1,22 @@
 /**
- * Tabbed Dashboard Engine — multi-tool tabbed navigation with canvas charts.
+ * Tabbed Dashboard Engine — config-driven tabs with declarative section views.
  * Config-driven via window.__APP_CONFIG__.
  *
  * Config shape:
- *   tabs:             [{id, label, tool, type, hasPeriod, needsArgs, defaultArgs, promptTitle, promptHint, searchPlaceholder}]
+ *   tabs:             [{id, label, tool, type?, sections?, form?, emptyState?,
+ *                       hasPeriod, needsArgs, defaultArgs, dataDetect,
+ *                       promptTitle, promptHint, searchPlaceholder, titleKey}]
  *   toolCatalog:      [{name, label, icon, desc, usage, source, stateful}]
  *   toolCatalogIntro: string (HTML)
  *   periods:          ["1y","2y","5y",...]
  *   defaultPeriod:    "5y"
  *   footerText:       "FRED · BLS · ..."
  *   colors:           ["#3b82f6",...]
- *   toolName:         "open_economic_app"  (the tool that opens the app)
+ *   toolName:         "open_economic_app"
+ *
+ * Section types (declarative, config-driven):
+ *   stats, label, list, scored-list, bands, form, banner, text, meta,
+ *   alerts, timestamp, gauge, card-grid, empty-state, explanations
  *
  * Expects globals from mcp-client.js:
  *   state, callTool, extractData, sendMessage, addViewActions, clearHeaderActions, showError
@@ -47,6 +53,29 @@ function fmtVal(v) {
   if (abs >= 1e4) return (v/1e3).toFixed(0)+'K';
   if (v === Math.floor(v)) return v.toString();
   return v.toFixed(2);
+}
+
+function resolveKey(obj, key) {
+  if (!key || !obj) return undefined;
+  var parts = key.split('.');
+  var val = obj;
+  for (var i = 0; i < parts.length; i++) {
+    if (val === null || val === undefined) return undefined;
+    val = val[parts[i]];
+  }
+  return val;
+}
+
+function formatValue(v, fmt) {
+  if (v === null || v === undefined) return '\u2014';
+  if (fmt === 'number' && typeof v === 'number') return v.toLocaleString();
+  if (fmt === 'percent' && typeof v === 'number') return (v * 100).toFixed(2) + '%';
+  if (fmt === 'percent-round' && typeof v === 'number') return Math.round(v * 100) + '%';
+  if (fmt === 'score' && typeof v === 'number') return v.toFixed(1);
+  if (fmt === 'date-short' && typeof v === 'string') { try { return new Date(v).toLocaleDateString('en', {month:'short',day:'numeric'}); } catch(e){} }
+  if (fmt === 'date' && typeof v === 'string') return v.substring(0, 10);
+  if (fmt === 'join' && Array.isArray(v)) return v.join(', ');
+  return String(v);
 }
 
 // ======================================================================
@@ -206,36 +235,51 @@ function buildUI() {
   wireToolbar();
 
   content.addEventListener('click', function(e) {
-    var el = e.target.closest('.te-cve-link');
-    if (el && el.dataset.cve) navigateToCVE(el.dataset.cve);
+    var el = e.target.closest('[data-navigate-tab]');
+    if (el) {
+      var targetTab = el.dataset.navigateTab;
+      var value = el.dataset.navigateValue;
+      if (targetTab && value) navigateToTab(targetTab, value);
+    }
+    var msgEl = e.target.closest('[data-send-message]');
+    if (msgEl) {
+      sendMessage(msgEl.dataset.sendMessage).catch(function(){});
+    }
   });
 }
 
-function navigateToCVE(cveId) {
-  var lookupTabId = null, lookupTab = null;
-  for (var i = 0; i < TABS.length; i++) {
-    if (TABS[i].type === 'vuln-lookup') { lookupTabId = TABS[i].id; lookupTab = TABS[i]; break; }
+// ======================================================================
+// Cross-tab Navigation
+// ======================================================================
+function navigateToTab(targetTabId, value) {
+  var tab = TAB_MAP[targetTabId];
+  if (!tab) return;
+
+  eS.activeTab = targetTabId;
+  activateTabUI(targetTabId);
+  document.getElementById('teToolbar').className = tab.hasPeriod ? 'te-toolbar' : 'te-toolbar hidden';
+
+  if (tab.form) {
+    document.getElementById('dashboard-title').textContent = tab.label + ': ' + value;
+    var c = document.getElementById('teContent');
+    c.innerHTML = renderFormHtml(tab.form, value) +
+      '<div id="teSectionResult"><div class="te-loading"><div class="te-spinner"></div><span>Loading\u2026</span></div></div>';
+    wireGenericForm(tab);
+    updateHeaderActions(targetTabId);
+
+    var args = {};
+    args[tab.form.queryParam] = value;
+    callTool(tab.tool, args).then(function(res) {
+      var d = extractData(res);
+      if (d) {
+        eS.tabData[targetTabId] = d;
+        renderSectionResult(tab, d);
+      }
+    }).catch(function(e) { showError(e.message); });
+    return;
   }
-  if (!lookupTabId || !lookupTab) return;
 
-  eS.activeTab = lookupTabId;
-  activateTabUI(lookupTabId);
-  document.getElementById('teToolbar').className = 'te-toolbar hidden';
-  document.getElementById('dashboard-title').textContent = 'CVE Analyzer: ' + cveId;
-
-  var ph = lookupTab.searchPlaceholder || 'Enter CVE ID \u2014 e.g. CVE-2021-44228';
-  document.getElementById('teContent').innerHTML =
-    '<div class="te-search-form"><input class="te-search-input" id="teLookupInput" type="text" value="' + escAttr(cveId) + '" placeholder="' + escAttr(ph) + '" /><button class="te-search-btn" id="teLookupBtn">Analyze</button></div>' +
-    '<div id="teLookupResult"><div class="te-loading"><div class="te-spinner"></div><span>Analyzing ' + esc(cveId) + '\u2026</span></div></div>';
-  wireLookup(lookupTab);
-  updateHeaderActions(lookupTabId);
-
-  var queryParam = lookupTab.searchQueryParam || 'cve_id';
-  var args = {}; args[queryParam] = cveId;
-  callTool(lookupTab.tool, args).then(function(res) {
-    var d = extractData(res);
-    if (d) { eS.tabData[lookupTabId] = d; renderVulnLookupResult(d); }
-  }).catch(function(e) { showError(e.message); });
+  switchTab(targetTabId);
 }
 
 // ======================================================================
@@ -265,12 +309,15 @@ function switchTab(tabId) {
 
   if (tab.type === 'tools') { renderToolsView(); updateHeaderActions(tabId); return; }
   if (eS.tabData[tabId]) { renderTabContent(tabId, eS.tabData[tabId]); updateHeaderActions(tabId); return; }
+
   if (tab.needsArgs) {
-    if (tab.type === 'search') renderSearchForm(tab);
-    else if (tab.type === 'vuln-lookup') renderVulnLookupForm(tab);
-    else if (tab.type === 'vuln-triage') renderVulnTriageForm(tab);
-    else if (tab.type === 'vuln-vendor') renderVulnVendorForm(tab);
-    else renderPromptView(tab.promptTitle || 'This view requires specific inputs', tab.promptHint || 'Ask your AI to call the appropriate tool');
+    if (tab.form) {
+      renderFormTab(tab);
+    } else if (tab.type === 'search') {
+      renderSearchForm(tab);
+    } else {
+      renderPromptView(tab.promptTitle || 'This view requires specific inputs', tab.promptHint || 'Ask your AI to call the appropriate tool');
+    }
     updateHeaderActions(tabId);
     return;
   }
@@ -287,24 +334,30 @@ function switchTab(tabId) {
   updateHeaderActions(tabId);
 }
 
+function matchesTabData(tab, data) {
+  var dd = tab.dataDetect;
+  if (!dd) return false;
+  if (dd.hasKey) return data[dd.hasKey] !== undefined;
+  if (dd.anyKey) {
+    for (var k = 0; k < dd.anyKey.length; k++) { if (data[dd.anyKey[k]] !== undefined) return true; }
+    return false;
+  }
+  if (dd.allKeys) {
+    for (var k = 0; k < dd.allKeys.length; k++) { if (data[dd.allKeys[k]] === undefined) return false; }
+    return true;
+  }
+  return false;
+}
+
 function onInitialData(data) {
   buildUI();
   var tabId = state.toolName ? TOOL_TO_TAB[state.toolName] : null;
   if (!tabId) {
     for (var i = 0; i < TABS.length; i++) {
       var t = TABS[i];
-      if (t.type === 'dashboard' && data.recession_probability) { tabId = t.id; break; }
-      if (t.type === 'vuln-briefing' && (data.kev_recent || data.top_epss)) { tabId = t.id; break; }
-      if (t.type === 'vuln-list' && data.entries && data.total_in_window !== undefined) { tabId = t.id; break; }
-      if (t.type === 'vuln-stats' && data.risk_bands) { tabId = t.id; break; }
-      if (t.type === 'vuln-lookup' && data.cve_id && data.risk) { tabId = t.id; break; }
-      if (t.type === 'vuln-triage' && data.buckets) { tabId = t.id; break; }
-      if (t.type === 'vuln-vendor' && data.vendor && data.products) { tabId = t.id; break; }
-      if (t.type === 'vuln-stack' && data.stack !== undefined) { tabId = t.id; break; }
-      if (t.type === 'vuln-watchlist' && data.watchlist !== undefined) { tabId = t.id; break; }
-      if (t.type === 'search' && data.query) { tabId = t.id; break; }
-      if (t.type === 'banking' && data.health_summary) { tabId = t.id; break; }
+      if (matchesTabData(t, data)) { tabId = t.id; break; }
       if (t.type === 'chart' && data.series) { tabId = t.id; break; }
+      if (t.type === 'search' && data.query) { tabId = t.id; break; }
     }
     if (!tabId) tabId = TABS[0].id;
   }
@@ -322,18 +375,11 @@ function onInitialData(data) {
 
 function renderTabContent(tabId, data) {
   var tab = TAB_MAP[tabId];
-  if (tab.type === 'dashboard') renderDashboardView(data);
-  else if (tab.type === 'chart') renderChartView(data);
-  else if (tab.type === 'banking') renderBankingView(data);
+  if (tab.sections) { renderSections(tabId, data); return; }
+  var custom = window.__CUSTOM_TAB_RENDERERS__;
+  if (custom && custom[tab.type]) { custom[tab.type](data, tabId); return; }
+  if (tab.type === 'chart') renderChartView(data);
   else if (tab.type === 'search') renderSearchResults(data);
-  else if (tab.type === 'vuln-briefing') renderVulnBriefingView(data);
-  else if (tab.type === 'vuln-list') renderVulnListView(data);
-  else if (tab.type === 'vuln-stats') renderVulnStatsView(data);
-  else if (tab.type === 'vuln-lookup') renderVulnLookupResult(data);
-  else if (tab.type === 'vuln-triage') renderVulnTriageResult(data);
-  else if (tab.type === 'vuln-vendor') renderVulnVendorResult(data);
-  else if (tab.type === 'vuln-stack') renderVulnStackView(data);
-  else if (tab.type === 'vuln-watchlist') renderVulnWatchlistView(data);
 }
 
 function updateHeaderActions(tabId) {
@@ -342,13 +388,7 @@ function updateHeaderActions(tabId) {
   if (tab.type === 'tools' || !data) { clearHeaderActions(); return; }
   addViewActions(
     function() {
-      var ctx = '';
-      if (tab.type === 'dashboard') {
-        var p = data.recession_probability ? data.recession_probability.probability || 0 : 0;
-        ctx = 'Recession probability: ' + (p*100).toFixed(0) + '%\n' + (data.recession_probability ? data.recession_probability.assessment || '' : '') + '\n\n' + (data.signals || []).map(function(s) { return s.title + ': ' + s.summary; }).join('\n');
-      } else {
-        ctx = (data.title || tab.label) + '\n' + (data.summary || '');
-      }
+      var ctx = (data.title || tab.label) + '\n' + (data.summary || '');
       return { question: 'Analyze this data. Key takeaways?', context: ctx };
     },
     function() { return refreshCurrentTab(); }
@@ -359,7 +399,7 @@ function teShowLoading(t) { document.getElementById('teContent').innerHTML = '<d
 function renderPromptView(title, hint) { document.getElementById('teContent').innerHTML = '<div class="te-prompt"><span class="te-prompt-text">' + esc(title) + '</span><span class="te-prompt-hint">' + esc(hint) + '</span></div>'; }
 
 // ======================================================================
-// Chart View
+// Chart View (generic — renders data.series)
 // ======================================================================
 function renderChartView(data) {
   var c = document.getElementById('teContent');
@@ -380,59 +420,7 @@ function renderChartView(data) {
 }
 
 // ======================================================================
-// Dashboard (Overview)
-// ======================================================================
-function renderDashboardView(data) {
-  var recession = data.recession_probability || {}, prob = recession.probability || 0, signals = data.signals || [];
-  document.getElementById('dashboard-title').textContent = 'Economic Outlook';
-  var c = document.getElementById('teContent');
-  c.innerHTML =
-    '<div class="te-prob-card"><div class="te-prob-label">Recession Probability</div>' +
-    '<div class="te-gauge"><div class="te-gauge-bg"></div><div class="te-gauge-cover"></div><div class="te-gauge-needle" id="teNeedle"></div></div>' +
-    '<div class="te-prob-value" id="tePv">\u2014</div><div class="te-prob-text" id="tePt"></div></div>' +
-    '<div class="te-section-label"><span class="te-section-label-text">Economic Signals</span><span class="te-section-label-count" id="teSc"></span></div>' +
-    '<div class="te-signals-grid" id="teSg"></div><div class="te-updated" id="teUpd"></div>';
-
-  var pvEl = document.getElementById('tePv');
-  pvEl.textContent = (prob * 100).toFixed(0) + '%';
-  pvEl.style.color = prob >= 0.6 ? 'var(--error)' : prob >= 0.3 ? 'var(--warning)' : 'var(--success)';
-  document.getElementById('teNeedle').style.transform = 'rotate(' + (-90 + prob * 180) + 'deg)';
-  document.getElementById('tePt').textContent = recession.assessment || data.summary || '';
-  document.getElementById('teSc').textContent = signals.length + ' signal' + (signals.length !== 1 ? 's' : '');
-
-  var grid = document.getElementById('teSg');
-  for (var i = 0; i < signals.length; i++) {
-    (function(sig) {
-      var lv = sig.score >= 0.6 ? 'high' : sig.score >= 0.3 ? 'medium' : 'low';
-      var card = document.createElement('div'); card.className = 'te-signal-card ' + lv;
-      var tags = '';
-      if (sig.tags && sig.tags.length) { tags = '<div class="te-signal-tags">'; for (var t = 0; t < sig.tags.length; t++) tags += '<span class="te-tag">' + esc(sig.tags[t].replace(/_/g, ' ')) + '</span>'; tags += '</div>'; }
-      card.innerHTML = '<div class="te-signal-name">' + esc(sig.title) + '</div><span class="te-signal-badge ' + lv + '">' + (sig.score * 100).toFixed(0) + '%</span><div class="te-signal-desc">' + esc(sig.summary) + '</div>' + tags;
-      card.addEventListener('click', function() { sendMessage('[Signal] ' + sig.title + ' (' + (sig.score*100).toFixed(0) + '%) \u2014 ' + sig.summary + '\n\nExplain this signal.').catch(function(){}); });
-      grid.appendChild(card);
-    })(signals[i]);
-  }
-  document.getElementById('teUpd').textContent = 'Updated ' + new Date().toLocaleTimeString();
-}
-
-// ======================================================================
-// Banking
-// ======================================================================
-function renderBankingView(data) {
-  var h = data.health_summary || {}, fails = data.recent_failures || [];
-  document.getElementById('dashboard-title').textContent = 'Banking System Health';
-  var c = document.getElementById('teContent');
-  var stats = '<div class="te-health-grid">';
-  var items = [{ l:'Institutions', v:h.total_institutions }, { l:'Problem Banks', v:h.problem_institutions }, { l:'Total Assets', v:h.total_assets?'$'+(h.total_assets/1e12).toFixed(1)+'T':null }, { l:'Recent Failures', v:data.failure_count }];
-  for (var i = 0; i < items.length; i++) { if (items[i].v !== null && items[i].v !== undefined) stats += '<div class="te-health-stat"><div class="te-health-val">' + items[i].v + '</div><div class="te-health-label">' + items[i].l + '</div></div>'; }
-  stats += '</div>';
-  var fl = '';
-  if (fails.length) { fl = '<div class="te-failures-title">Recent Failures</div>'; for (var f = 0; f < Math.min(fails.length, 12); f++) { var r = fails[f]; fl += '<div class="te-failure-item"><span class="te-failure-name">' + esc(r.institution||r.name||'Unknown') + '</span><span class="te-failure-meta">' + esc((r.city||'')+(r.state?', '+r.state:'')+(r.failure_date?' \u00B7 '+r.failure_date:'')) + '</span></div>'; } }
-  c.innerHTML = stats + fl + '<div class="te-summary">' + esc(data.summary || h.assessment || '') + '</div>';
-}
-
-// ======================================================================
-// Search
+// Search (generic — form + results)
 // ======================================================================
 function renderSearchForm(tab) {
   document.getElementById('dashboard-title').textContent = 'Search';
@@ -464,23 +452,6 @@ function wireSearch() {
   btn.addEventListener('click', go); inp.addEventListener('keydown', function(e){if(e.key==='Enter')go();});
 }
 
-function cveLink(cveId) {
-  if (!cveId) return '';
-  return '<span class="te-kev-badge te-cve-link" data-cve="' + escAttr(cveId) + '">' + esc(cveId) + '</span>';
-}
-
-function cveLinkEpss(cveId) {
-  if (!cveId) return '';
-  return '<span class="te-epss-cve te-cve-link" data-cve="' + escAttr(cveId) + '">' + esc(cveId) + '</span>';
-}
-
-var SEV_BADGE_LEVELS = { CRITICAL: true, HIGH: true, MEDIUM: true, LOW: true };
-function sevBadgeHtml(sev) {
-  var upper = (sev || '').toUpperCase();
-  if (!SEV_BADGE_LEVELS[upper]) return sev ? '<span class="te-search-item-id">' + esc(sev) + '</span>' : '';
-  return '<span class="te-vuln-severity te-sev-' + upper.toLowerCase() + '" style="margin-left:6px;vertical-align:middle">' + upper + '</span>';
-}
-
 function showSearchItems(data) {
   var results = data.results || [], el = document.getElementById('teSr');
   if (!results.length) { el.innerHTML = '<div class="te-prompt"><span class="te-prompt-text">No results</span></div>'; return; }
@@ -489,487 +460,14 @@ function showSearchItems(data) {
     var r = results[i];
     var meta = [r.units, r.seasonal_adjustment].filter(Boolean).join(' \u00B7 ');
     var idStr = r.id || r.series_id || '';
-    var idHtml = idStr ? '<span class="te-search-item-id te-cve-link" data-cve="' + escAttr(idStr) + '">' + esc(idStr) + '</span>' : '';
-    html += '<div class="te-search-item"><div class="te-search-item-title">' + esc(r.title||r.name||'') + idHtml + sevBadgeHtml(r.frequency) + '</div>' + (meta ? '<div class="te-search-item-meta">' + esc(meta) + '</div>' : '') + '</div>';
+    var idHtml = idStr ? '<span class="te-search-item-id">' + esc(idStr) + '</span>' : '';
+    html += '<div class="te-search-item"><div class="te-search-item-title">' + esc(r.title||r.name||'') + idHtml + '</div>' + (meta ? '<div class="te-search-item-meta">' + esc(meta) + '</div>' : '') + '</div>';
   }
   el.innerHTML = html;
 }
 
 // ======================================================================
-// Vulnerability Briefing (Threat Overview)
-// ======================================================================
-function renderVulnBriefingView(data) {
-  document.getElementById('dashboard-title').textContent = 'Threat Briefing';
-  var c = document.getElementById('teContent');
-  var kevRecent = data.kev_recent || [];
-  var topEpss = data.top_epss || [];
-
-  var statsHtml =
-    '<div class="te-vuln-stats-row">' +
-      '<div class="te-vuln-stat">' +
-        '<div class="te-vuln-stat-value">' + esc(String(data.new_cves_7d !== undefined ? data.new_cves_7d.toLocaleString() : '\u2014')) + '</div>' +
-        '<div class="te-vuln-stat-label">New CVEs (last 7 days)</div>' +
-      '</div>' +
-      '<div class="te-vuln-stat">' +
-        '<div class="te-vuln-stat-value">' + esc(String(data.kev_total !== undefined ? data.kev_total.toLocaleString() : '\u2014')) + '</div>' +
-        '<div class="te-vuln-stat-label">CISA KEV Total' + (data.kev_added_7d ? ' <span class="te-vuln-stat-badge">+' + data.kev_added_7d + ' this week</span>' : '') + '</div>' +
-      '</div>' +
-      (data.ransomware_linked ? '<div class="te-vuln-stat">' +
-        '<div class="te-vuln-stat-value">' + esc(String(data.ransomware_linked.toLocaleString())) + '</div>' +
-        '<div class="te-vuln-stat-label">KEV Ransomware-Linked</div>' +
-      '</div>' : '') +
-    '</div>';
-
-  var kevHtml = '';
-  if (kevRecent.length) {
-    kevHtml = '<div class="te-section-label"><span class="te-section-label-text">Just Added to CISA KEV</span><span class="te-section-label-count">confirmed exploited in the wild</span></div><div class="te-kev-list">';
-    for (var i = 0; i < kevRecent.length; i++) {
-      var e = kevRecent[i];
-      var isRW = e.ransomware_use === 'Known';
-      kevHtml += '<div class="te-kev-entry">' +
-        cveLink(e.cve_id) +
-        '<span class="te-kev-vendor">' + esc((e.vendor || '') + (e.product ? ' \u00B7 ' + e.product : '')) + '</span>' +
-        (isRW ? '<span class="te-kev-ransomware">\u26A0 Ransomware</span>' : '') +
-        '<span class="te-kev-date">' + esc(e.date_added || '') + '</span>' +
-        '</div>';
-    }
-    kevHtml += '</div>';
-  }
-
-  var epssHtml = '';
-  if (topEpss.length) {
-    epssHtml = '<div class="te-section-label" style="margin-top:16px"><span class="te-section-label-text">Highest Exploit Probability</span><span class="te-section-label-count">most likely exploited in next 30 days</span></div><div class="te-epss-list">';
-    for (var j = 0; j < topEpss.length; j++) {
-      var s = topEpss[j];
-      var pct = Math.round((s.epss_score || 0) * 100);
-      var lvl = (s.risk_level || 'low').toLowerCase();
-      epssHtml += '<div class="te-epss-entry">' +
-        '<span class="te-vuln-severity te-sev-' + lvl + '">' + esc(s.risk_level || '') + '</span>' +
-        cveLinkEpss(s.cve) +
-        '<div class="te-epss-bar-wrap"><div class="te-epss-bar te-sev-bar-' + lvl + '" style="width:' + pct + '%"></div></div>' +
-        '<span class="te-epss-pct">' + pct + '%</span>' +
-        '</div>';
-    }
-    epssHtml += '</div>';
-  }
-
-  var briefingHtml = '';
-  var personalizedBriefing = data.personalized_briefing || [];
-  if (personalizedBriefing.length) {
-    briefingHtml = '<div class="te-section-label" style="margin-top:16px"><span class="te-section-label-text">Your Briefing</span><span class="te-section-label-count">personalized alerts</span></div><div class="te-briefing-alerts">';
-    for (var bi = 0; bi < personalizedBriefing.length; bi++) {
-      briefingHtml += '<div class="te-briefing-alert">' + esc(personalizedBriefing[bi]) + '</div>';
-    }
-    briefingHtml += '</div>';
-  }
-
-  c.innerHTML = (briefingHtml || '') + statsHtml + kevHtml + epssHtml + '<div class="te-summary">' + esc(data.summary || '') + '</div><div class="te-updated">Updated ' + new Date().toLocaleTimeString() + '</div>';
-}
-
-// ======================================================================
-// Vulnerability List (KEV Feed)
-// ======================================================================
-function renderVulnListView(data) {
-  document.getElementById('dashboard-title').textContent = 'Actively Exploited';
-  var c = document.getElementById('teContent');
-  var entries = data.entries || [];
-  var header = '<div class="te-section-label"><span class="te-section-label-text">CISA Known Exploited Vulnerabilities</span><span class="te-section-label-count">' + esc(String(data.total_in_window || entries.length)) + ' added in past ' + esc(String(data.days_back || 30)) + ' days</span></div>';
-  if (!entries.length) {
-    c.innerHTML = header + '<div class="te-loading"><span>No entries in this window</span></div>';
-    return;
-  }
-  var listHtml = '<div class="te-kev-list">';
-  for (var i = 0; i < entries.length; i++) {
-    var e = entries[i];
-    var isRW = e.ransomware_use === 'Known';
-    listHtml += '<div class="te-kev-entry te-kev-entry-full">' +
-      cveLink(e.cve_id) +
-      '<div class="te-kev-detail">' +
-        '<div class="te-kev-name">' + esc(e.vulnerability_name || ((e.vendor || '') + ' ' + (e.product || ''))) + '</div>' +
-        '<div class="te-kev-meta">' + esc(e.vendor || '') + (e.product ? ' \u00B7 ' + e.product : '') + (e.due_date ? ' \u00B7 Due: ' + e.due_date : '') + '</div>' +
-      '</div>' +
-      (isRW ? '<span class="te-kev-ransomware">\u26A0 Ransomware</span>' : '') +
-      '<span class="te-kev-date">' + esc(e.date_added || '') + '</span>' +
-      '</div>';
-  }
-  listHtml += '</div>';
-  c.innerHTML = header + listHtml;
-}
-
-// ======================================================================
-// Vulnerability Stats (EPSS Risk Landscape)
-// ======================================================================
-function renderVulnStatsView(data) {
-  document.getElementById('dashboard-title').textContent = 'Risk Landscape';
-  var c = document.getElementById('teContent');
-  var bands = data.risk_bands || {};
-  var total = data.total_scored || 0;
-  var order = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
-  var colors = { CRITICAL: 'var(--error)', HIGH: '#f97316', MEDIUM: 'var(--warning)', LOW: 'var(--success)' };
-
-  var html = '<div class="te-section-label"><span class="te-section-label-text">EPSS Risk Distribution</span><span class="te-section-label-count">' + total.toLocaleString() + ' CVEs scored</span></div><div class="te-risk-bands">';
-  for (var i = 0; i < order.length; i++) {
-    var tier = order[i];
-    var band = bands[tier] || {};
-    var count = band.count || 0;
-    var pctNum = total > 0 ? (count / total) * 100 : 0;
-    var barWidth = Math.min(pctNum * 4, 100);
-    html += '<div class="te-risk-band">' +
-      '<span class="te-risk-band-label" style="color:' + colors[tier] + '">' + tier + '</span>' +
-      '<div class="te-risk-band-track"><div class="te-risk-band-fill" style="width:' + barWidth + '%;background:' + colors[tier] + '"></div></div>' +
-      '<span class="te-risk-band-count">' + count.toLocaleString() + '</span>' +
-      '<span class="te-risk-band-pct">' + esc(band.percent_of_total || '0%') + '</span>' +
-      '</div>';
-  }
-  html += '</div>';
-
-  var explanations = [
-    { tier: 'CRITICAL', color: 'var(--error)', desc: 'EPSS > 70% \u2014 very high probability of exploitation in 30 days.' },
-    { tier: 'HIGH', color: '#f97316', desc: 'EPSS 40\u201370% \u2014 elevated risk. Prioritize if in your tech stack.' },
-    { tier: 'MEDIUM', color: 'var(--warning)', desc: 'EPSS 10\u201340% \u2014 moderate risk. Patch in normal cycle.' },
-    { tier: 'LOW', color: 'var(--success)', desc: 'EPSS < 10% \u2014 low exploitation probability. Routine handling.' },
-  ];
-  html += '<div class="te-section-label" style="margin-top:16px"><span class="te-section-label-text">EPSS Score Bands Explained</span></div><div class="te-vuln-stats-row">';
-  for (var j = 0; j < explanations.length; j++) {
-    var ex = explanations[j];
-    html += '<div class="te-vuln-stat" style="border-left:3px solid ' + ex.color + '">' +
-      '<div class="te-vuln-stat-label" style="color:' + ex.color + ';font-weight:700;font-size:12px">' + ex.tier + '</div>' +
-      '<div class="te-vuln-stat-desc">' + esc(ex.desc) + '</div>' +
-      '</div>';
-  }
-  html += '</div>';
-  html += '<div class="te-summary">' + esc(data.summary || ('EPSS score distribution across ' + total.toLocaleString() + ' scored CVEs from FIRST.org.')) + '</div>';
-  c.innerHTML = html;
-}
-
-// ======================================================================
-// CVE Analyzer (vuln-lookup)
-// ======================================================================
-function sevColor(tier) {
-  var map = { CRITICAL: '#ef4444', HIGH: '#f97316', MEDIUM: '#eab308', LOW: '#10b981', NONE: 'var(--text-muted)' };
-  return map[(tier || '').toUpperCase()] || 'var(--text-primary)';
-}
-
-function renderVulnLookupForm(tab) {
-  document.getElementById('dashboard-title').textContent = 'CVE Analyzer';
-  var placeholder = tab.searchPlaceholder || 'Enter CVE ID — e.g. CVE-2021-44228';
-  document.getElementById('teContent').innerHTML =
-    '<div class="te-search-form"><input class="te-search-input" id="teLookupInput" type="text" placeholder="' + escAttr(placeholder) + '" /><button class="te-search-btn" id="teLookupBtn">Analyze</button></div>' +
-    '<div id="teLookupResult"><div class="te-prompt"><span class="te-prompt-text">Enter a CVE ID for full cross-source analysis</span><span class="te-prompt-hint">CVSS severity \u00B7 EPSS exploit probability \u00B7 CISA KEV status</span></div></div>';
-  wireLookup(tab);
-  document.getElementById('teLookupInput').focus();
-}
-
-function wireLookup(tab) {
-  var inp = document.getElementById('teLookupInput');
-  var btn = document.getElementById('teLookupBtn');
-  var queryParam = tab.searchQueryParam || 'cve_id';
-  function go() {
-    var q = inp.value.trim().toUpperCase();
-    if (!q) return;
-    btn.disabled = true; btn.textContent = 'Analyzing\u2026';
-    var resultEl = document.getElementById('teLookupResult');
-    if (resultEl) resultEl.innerHTML = '<div class="te-loading"><div class="te-spinner"></div><span>Analyzing ' + esc(q) + '\u2026</span></div>';
-    var args = {}; args[queryParam] = q;
-    callTool(tab.tool, args).then(function(res) {
-      var d = extractData(res);
-      if (d) { eS.tabData[tab.id] = d; renderVulnLookupResult(d); }
-    }).catch(function(e) { showError(e.message); }).finally(function() { btn.disabled = false; btn.textContent = 'Analyze'; });
-  }
-  btn.addEventListener('click', go);
-  inp.addEventListener('keydown', function(e) { if (e.key === 'Enter') go(); });
-}
-
-function renderVulnLookupResult(data) {
-  var cveId = data.cve_id || '';
-  document.getElementById('dashboard-title').textContent = cveId ? 'CVE Analyzer: ' + cveId : 'CVE Analyzer';
-  var resultEl = document.getElementById('teLookupResult');
-  if (!resultEl) {
-    var lookupTab = null;
-    for (var ti = 0; ti < TABS.length; ti++) { if (TABS[ti].type === 'vuln-lookup') { lookupTab = TABS[ti]; break; } }
-    var ph = (lookupTab && lookupTab.searchPlaceholder) || 'Enter CVE ID \u2014 e.g. CVE-2021-44228';
-    document.getElementById('teContent').innerHTML =
-      '<div class="te-search-form"><input class="te-search-input" id="teLookupInput" type="text" value="' + escAttr(cveId) + '" placeholder="' + escAttr(ph) + '" /><button class="te-search-btn" id="teLookupBtn">Analyze</button></div>' +
-      '<div id="teLookupResult"></div>';
-    if (lookupTab) wireLookup(lookupTab);
-    resultEl = document.getElementById('teLookupResult');
-  }
-
-  var risk = data.risk || {}, nvd = data.nvd || {}, epss = data.epss || {}, kev = data.kev;
-  var tier = (risk.tier || 'LOW').toUpperCase();
-  var cvssScore = risk.cvss_base_score !== null && risk.cvss_base_score !== undefined ? String(risk.cvss_base_score) : '\u2014';
-  var cvssLabel = (nvd.cvss_v3 && nvd.cvss_v3.base_severity) ? nvd.cvss_v3.base_severity : '';
-  var epssDisplay = epss.epss_percent || (epss.epss_score !== undefined ? (epss.epss_score * 100).toFixed(2) + '%' : '\u2014');
-  var epssLabel = epss.percentile_label || '';
-  var composite = risk.composite_score !== undefined ? risk.composite_score.toFixed(1) + '/10' : '\u2014';
-
-  var statsHtml = '<div class="te-vuln-stats-row">' +
-    '<div class="te-vuln-stat"><div class="te-vuln-stat-value" style="color:' + sevColor(cvssLabel || tier) + '">' + esc(cvssScore) + '</div><div class="te-vuln-stat-label">CVSS Score' + (cvssLabel ? ' \u00B7 ' + cvssLabel : '') + '</div></div>' +
-    '<div class="te-vuln-stat"><div class="te-vuln-stat-value" style="color:' + sevColor(epss.risk_level || tier) + '">' + esc(epssDisplay) + '</div><div class="te-vuln-stat-label">EPSS Probability' + (epssLabel ? ' \u00B7 ' + epssLabel : '') + '</div></div>' +
-    '<div class="te-vuln-stat"><div class="te-vuln-stat-value" style="color:' + sevColor(tier) + '">' + esc(composite) + '</div><div class="te-vuln-stat-label">Composite Risk \u00B7 ' + tier + '</div></div>' +
-    '</div>';
-
-  var kevHtml = kev
-    ? '<div class="te-kev-banner te-kev-banner-confirmed"><span class="te-kev-banner-label">CISA KEV \u2014 Actively Exploited</span><span class="te-kev-banner-meta">' + esc((kev.vendor||'') + (kev.product?' \u00B7 '+kev.product:'') + (kev.date_added?' \u00B7 Added '+kev.date_added:'') + (kev.due_date?' \u00B7 Federal deadline: '+kev.due_date:'')) + '</span>' + (kev.ransomware_use==='Known'?'<span class="te-kev-ransomware">\u26A0 Ransomware</span>':'') + '</div>'
-    : '<div class="te-kev-banner te-kev-banner-clear"><span class="te-kev-banner-label">Not in CISA KEV</span><span class="te-kev-banner-meta">No confirmed active exploitation on record</span></div>';
-
-  var descHtml = nvd.description ? '<div class="te-lookup-desc">' + esc(nvd.description) + '</div>' : '';
-  var weakHtml = (nvd.weaknesses && nvd.weaknesses.length) ? '<div class="te-lookup-meta"><span class="te-lookup-meta-label">Weaknesses:</span> ' + esc(nvd.weaknesses.join(', ')) + '</div>' : '';
-  var pubHtml = nvd.published ? '<div class="te-lookup-meta"><span class="te-lookup-meta-label">Published:</span> ' + esc(nvd.published.substring(0, 10)) + '</div>' : '';
-  var rationaleHtml = risk.rationale ? '<div class="te-summary" style="margin-top:10px">' + esc(risk.rationale) + '</div>' : '';
-
-  resultEl.innerHTML = statsHtml + kevHtml + descHtml + weakHtml + pubHtml + rationaleHtml;
-}
-
-// ======================================================================
-// Scan Triage (vuln-triage)
-// ======================================================================
-function renderVulnTriageForm(tab) {
-  document.getElementById('dashboard-title').textContent = 'Scan Triage';
-  var placeholder = tab.searchPlaceholder || 'CVE-2021-44228, CVE-2022-1388, \u2026';
-  document.getElementById('teContent').innerHTML =
-    '<div class="te-triage-form"><textarea class="te-triage-input" id="teTriageInput" placeholder="' + escAttr(placeholder) + '" rows="3"></textarea><button class="te-search-btn" id="teTriageBtn">Triage</button></div>' +
-    '<div id="teTriageResult"><div class="te-prompt"><span class="te-prompt-text">Paste CVE IDs from a scan to prioritize by exploit risk</span><span class="te-prompt-hint">Comma-separated \u00B7 Scored via FIRST EPSS</span></div></div>';
-  wireTriage(tab);
-  document.getElementById('teTriageInput').focus();
-}
-
-function wireTriage(tab) {
-  var inp = document.getElementById('teTriageInput');
-  var btn = document.getElementById('teTriageBtn');
-  var queryParam = tab.searchQueryParam || 'cve_ids';
-  function go() {
-    var q = inp.value.trim();
-    if (!q) return;
-    btn.disabled = true; btn.textContent = 'Triaging\u2026';
-    var resultEl = document.getElementById('teTriageResult');
-    if (resultEl) resultEl.innerHTML = '<div class="te-loading"><div class="te-spinner"></div><span>Scoring CVEs\u2026</span></div>';
-    var args = {}; args[queryParam] = q;
-    callTool(tab.tool, args).then(function(res) {
-      var d = extractData(res);
-      if (d) { eS.tabData[tab.id] = d; renderVulnTriageResult(d); }
-    }).catch(function(e) { showError(e.message); }).finally(function() { btn.disabled = false; btn.textContent = 'Triage'; });
-  }
-  btn.addEventListener('click', go);
-}
-
-function renderVulnTriageResult(data) {
-  document.getElementById('dashboard-title').textContent = 'Scan Triage';
-  var resultEl = document.getElementById('teTriageResult');
-  if (!resultEl) {
-    var triageTab = null;
-    for (var ti = 0; ti < TABS.length; ti++) { if (TABS[ti].type === 'vuln-triage') { triageTab = TABS[ti]; break; } }
-    var ph = (triageTab && triageTab.searchPlaceholder) || 'CVE-2021-44228, CVE-2022-1388, \u2026';
-    document.getElementById('teContent').innerHTML =
-      '<div class="te-triage-form"><textarea class="te-triage-input" id="teTriageInput" placeholder="' + escAttr(ph) + '" rows="3"></textarea><button class="te-search-btn" id="teTriageBtn">Triage</button></div>' +
-      '<div id="teTriageResult"></div>';
-    if (triageTab) wireTriage(triageTab);
-    resultEl = document.getElementById('teTriageResult');
-  }
-
-  var buckets = data.buckets || {}, submitted = data.total_submitted || 0, scored = data.total_scored || 0, unscored = data.unscored_cves || [];
-  var TIERS = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
-  var tierColors = { CRITICAL: '#ef4444', HIGH: '#f97316', MEDIUM: '#eab308', LOW: '#10b981' };
-
-  var statsHtml = '<div class="te-vuln-stats-row">' +
-    '<div class="te-vuln-stat"><div class="te-vuln-stat-value">' + submitted + '</div><div class="te-vuln-stat-label">Submitted</div></div>' +
-    '<div class="te-vuln-stat"><div class="te-vuln-stat-value">' + scored + '</div><div class="te-vuln-stat-label">Scored</div></div>' +
-    (unscored.length ? '<div class="te-vuln-stat"><div class="te-vuln-stat-value te-sev-text-medium">' + unscored.length + '</div><div class="te-vuln-stat-label">Not in EPSS</div></div>' : '') +
-    '</div>';
-
-  var tiersHtml = '';
-  for (var t = 0; t < TIERS.length; t++) {
-    var tier = TIERS[t], cves = buckets[tier] || [];
-    if (!cves.length) continue;
-    tiersHtml += '<div class="te-triage-tier"><div class="te-section-label"><span class="te-section-label-text" style="color:' + tierColors[tier] + '">' + tier + '</span><span class="te-section-label-count">' + cves.length + ' CVE' + (cves.length !== 1 ? 's' : '') + '</span></div><div class="te-epss-list">';
-    for (var ci = 0; ci < cves.length; ci++) {
-      var s = cves[ci], pct = Math.round((s.epss_score || 0) * 100), lvl = (s.risk_level || 'low').toLowerCase();
-      tiersHtml += '<div class="te-epss-entry"><span class="te-vuln-severity te-sev-' + lvl + '">' + esc(s.risk_level || '') + '</span>' + cveLinkEpss(s.cve) + '<div class="te-epss-bar-wrap"><div class="te-epss-bar te-sev-bar-' + lvl + '" style="width:' + pct + '%"></div></div><span class="te-epss-pct">' + pct + '%</span></div>';
-    }
-    tiersHtml += '</div></div>';
-  }
-  if (!tiersHtml) tiersHtml = '<div class="te-loading"><span>No CVEs could be scored — EPSS may not have records for these IDs</span></div>';
-  var unscoredHtml = unscored.length ? '<div class="te-lookup-meta" style="margin-top:10px"><span class="te-lookup-meta-label">Not in EPSS:</span> ' + esc(unscored.join(', ')) + '</div>' : '';
-
-  resultEl.innerHTML = statsHtml + tiersHtml + unscoredHtml;
-}
-
-// ======================================================================
-// Vendor Exposure (vuln-vendor)
-// ======================================================================
-function renderVulnVendorForm(tab) {
-  document.getElementById('dashboard-title').textContent = 'Vendor Exposure';
-  var placeholder = tab.searchPlaceholder || 'Vendor name \u2014 e.g. Microsoft';
-  document.getElementById('teContent').innerHTML =
-    '<div class="te-search-form"><input class="te-search-input" id="teVendorInput" type="text" placeholder="' + escAttr(placeholder) + '" /><button class="te-search-btn" id="teVendorBtn">Analyze</button></div>' +
-    '<div id="teVendorResult"><div class="te-prompt"><span class="te-prompt-text">Enter a vendor name to see their CISA KEV exposure</span><span class="te-prompt-hint">All products with confirmed actively-exploited CVEs</span></div></div>';
-  wireVendor(tab);
-  document.getElementById('teVendorInput').focus();
-}
-
-function wireVendor(tab) {
-  var inp = document.getElementById('teVendorInput');
-  var btn = document.getElementById('teVendorBtn');
-  var queryParam = tab.searchQueryParam || 'vendor';
-  function go() {
-    var q = inp.value.trim();
-    if (!q) return;
-    btn.disabled = true; btn.textContent = 'Analyzing\u2026';
-    var resultEl = document.getElementById('teVendorResult');
-    if (resultEl) resultEl.innerHTML = '<div class="te-loading"><div class="te-spinner"></div><span>Looking up ' + esc(q) + '\u2026</span></div>';
-    var args = {}; args[queryParam] = q;
-    callTool(tab.tool, args).then(function(res) {
-      var d = extractData(res);
-      if (d) { eS.tabData[tab.id] = d; renderVulnVendorResult(d); }
-    }).catch(function(e) { showError(e.message); }).finally(function() { btn.disabled = false; btn.textContent = 'Analyze'; });
-  }
-  btn.addEventListener('click', go);
-  inp.addEventListener('keydown', function(e) { if (e.key === 'Enter') go(); });
-}
-
-function renderVulnVendorResult(data) {
-  var vendor = data.vendor || '';
-  document.getElementById('dashboard-title').textContent = vendor ? 'Vendor: ' + vendor : 'Vendor Exposure';
-  var resultEl = document.getElementById('teVendorResult');
-  if (!resultEl) {
-    var vendorTab = null;
-    for (var ti = 0; ti < TABS.length; ti++) { if (TABS[ti].type === 'vuln-vendor') { vendorTab = TABS[ti]; break; } }
-    var ph = (vendorTab && vendorTab.searchPlaceholder) || 'Vendor name \u2014 e.g. Microsoft';
-    document.getElementById('teContent').innerHTML =
-      '<div class="te-search-form"><input class="te-search-input" id="teVendorInput" type="text" value="' + escAttr(vendor) + '" placeholder="' + escAttr(ph) + '" /><button class="te-search-btn" id="teVendorBtn">Analyze</button></div>' +
-      '<div id="teVendorResult"></div>';
-    if (vendorTab) wireVendor(vendorTab);
-    resultEl = document.getElementById('teVendorResult');
-  }
-
-  if (!data.total_kev_entries) {
-    resultEl.innerHTML = '<div class="te-loading"><span>No KEV entries found for \u201C' + esc(vendor) + '\u201D</span></div>';
-    return;
-  }
-
-  var statsHtml = '<div class="te-vuln-stats-row">' +
-    '<div class="te-vuln-stat"><div class="te-vuln-stat-value">' + (data.total_kev_entries || 0) + '</div><div class="te-vuln-stat-label">KEV Entries</div></div>' +
-    '<div class="te-vuln-stat"><div class="te-vuln-stat-value">' + (data.total_products_affected || 0) + '</div><div class="te-vuln-stat-label">Products Affected</div></div>' +
-    '<div class="te-vuln-stat"><div class="te-vuln-stat-value" style="color:#ef4444">' + (data.total_ransomware_linked || 0) + '</div><div class="te-vuln-stat-label">Ransomware-Linked</div></div>' +
-    '</div>';
-
-  var products = data.products || [], maxCount = products.length ? products[0].kev_entries : 1;
-  var tableHtml = '<div class="te-section-label"><span class="te-section-label-text">Product Exposure</span><span class="te-section-label-count">' + products.length + ' product' + (products.length !== 1 ? 's' : '') + '</span></div><div class="te-vendor-table">';
-  for (var i = 0; i < products.length; i++) {
-    var p = products[i], barW = Math.min(Math.round((p.kev_entries / maxCount) * 100), 100), hasRW = p.ransomware_linked > 0;
-    tableHtml += '<div class="te-vendor-row"><span class="te-vendor-product">' + esc(p.product) + '</span><div class="te-epss-bar-wrap"><div class="te-epss-bar" style="width:' + barW + '%;background:' + (hasRW ? '#ef4444' : '#f97316') + '"></div></div><span class="te-vendor-count">' + p.kev_entries + '</span>' + (hasRW ? '<span class="te-kev-ransomware">' + p.ransomware_linked + '\u00A0RW</span>' : '<span class="te-vendor-norw"></span>') + '</div>';
-  }
-  tableHtml += '</div>';
-
-  resultEl.innerHTML = statsHtml + tableHtml;
-}
-
-// ======================================================================
-// My Stack (vuln-stack)
-// ======================================================================
-function renderVulnStackView(data) {
-  document.getElementById('dashboard-title').textContent = 'My Stack';
-  var c = document.getElementById('teContent');
-  var stack = data.stack || [];
-
-  if (!stack.length) {
-    c.innerHTML =
-      '<div class="te-prompt">' +
-        '<span class="te-prompt-text">No technologies configured yet</span>' +
-        '<span class="te-prompt-hint">Tell your AI: \u201CAdd nginx:1.25, postgresql:16, redis:7 to my stack\u201D<br>Every CVE lookup, scan triage, and briefing will automatically flag threats to your infrastructure.</span>' +
-      '</div>';
-    return;
-  }
-
-  var statsHtml = '<div class="te-vuln-stats-row">' +
-    '<div class="te-vuln-stat"><div class="te-vuln-stat-value">' + stack.length + '</div><div class="te-vuln-stat-label">Technologies Monitored</div></div>' +
-    '</div>';
-
-  var listHtml = '<div class="te-section-label"><span class="te-section-label-text">Your Technology Stack</span><span class="te-section-label-count">CVE matches flagged automatically</span></div><div class="te-stack-list">';
-  for (var i = 0; i < stack.length; i++) {
-    var entry = stack[i];
-    var product = entry.product || '';
-    var version = entry.version && entry.version !== '*' ? entry.version : '';
-    var vendor = entry.vendor || '';
-    var label = product + (version ? ' ' + version : '');
-    listHtml += '<div class="te-stack-entry">' +
-      '<span class="te-stack-product">' + esc(label) + '</span>' +
-      (vendor ? '<span class="te-stack-vendor">' + esc(vendor) + '</span>' : '') +
-      '<span class="te-stack-cpe">' + esc(entry.cpe_pattern || '') + '</span>' +
-      '</div>';
-  }
-  listHtml += '</div>';
-
-  c.innerHTML = statsHtml + listHtml +
-    '<div class="te-summary">Tell your AI to add or remove technologies. Scan triage and CVE lookups cross-reference this list automatically.</div>' +
-    '<div class="te-updated">Updated ' + new Date().toLocaleTimeString() + '</div>';
-}
-
-// ======================================================================
-// Watchlist (vuln-watchlist)
-// ======================================================================
-function renderVulnWatchlistView(data) {
-  document.getElementById('dashboard-title').textContent = 'Watchlist';
-  var c = document.getElementById('teContent');
-  var watchlist = data.watchlist || [];
-
-  if (!watchlist.length) {
-    c.innerHTML =
-      '<div class="te-prompt">' +
-        '<span class="te-prompt-text">No CVEs on your watchlist</span>' +
-        '<span class="te-prompt-hint">Tell your AI: \u201CWatch CVE-2024-3094, CVE-2024-21762\u201D<br>Baseline EPSS and KEV scores are captured immediately. Future checks report score changes and new exploitation activity.</span>' +
-      '</div>';
-    return;
-  }
-
-  var critCount = 0, highCount = 0, kevCount = 0;
-  for (var si = 0; si < watchlist.length; si++) {
-    var tier = (watchlist[si].last_risk_tier || '').toUpperCase();
-    if (tier === 'CRITICAL') critCount++;
-    else if (tier === 'HIGH') highCount++;
-    if (watchlist[si].last_in_kev) kevCount++;
-  }
-
-  var statsHtml = '<div class="te-vuln-stats-row">' +
-    '<div class="te-vuln-stat"><div class="te-vuln-stat-value">' + watchlist.length + '</div><div class="te-vuln-stat-label">CVEs Watched</div></div>' +
-    (critCount ? '<div class="te-vuln-stat"><div class="te-vuln-stat-value" style="color:#ef4444">' + critCount + '</div><div class="te-vuln-stat-label">Critical Risk</div></div>' : '') +
-    (highCount ? '<div class="te-vuln-stat"><div class="te-vuln-stat-value" style="color:#f97316">' + highCount + '</div><div class="te-vuln-stat-label">High Risk</div></div>' : '') +
-    (kevCount ? '<div class="te-vuln-stat"><div class="te-vuln-stat-value" style="color:#ef4444">' + kevCount + '</div><div class="te-vuln-stat-label">In CISA KEV</div></div>' : '') +
-    '</div>';
-
-  var listHtml = '<div class="te-section-label"><span class="te-section-label-text">Watched CVEs</span><span class="te-section-label-count">baseline tracked \u00B7 deltas on refresh</span></div><div class="te-watchlist">';
-  for (var i = 0; i < watchlist.length; i++) {
-    var w = watchlist[i];
-    var riskTier = (w.last_risk_tier || 'LOW').toUpperCase();
-    var epssScore = w.last_epss_score;
-    var epssPct = epssScore !== null && epssScore !== undefined ? Math.round(epssScore * 100) + '%' : '\u2014';
-    var composite = w.last_composite_score !== null && w.last_composite_score !== undefined ? w.last_composite_score.toFixed(1) : '\u2014';
-    var daysStr = w.days_on_watchlist !== undefined ? w.days_on_watchlist + 'd' : '';
-
-    var addedDate = '';
-    if (w.added_at) {
-      try { addedDate = new Date(w.added_at).toLocaleDateString('en', { month: 'short', day: 'numeric' }); } catch(e) {}
-    }
-
-    listHtml += '<div class="te-watchlist-entry">' +
-      '<span class="te-vuln-severity te-sev-' + riskTier.toLowerCase() + '">' + riskTier + '</span>' +
-      cveLink(w.cve_id) +
-      '<span class="te-watchlist-epss">EPSS ' + esc(epssPct) + '</span>' +
-      '<span class="te-watchlist-composite">' + esc(composite) + '/10</span>' +
-      (w.last_in_kev ? '<span class="te-kev-ransomware">KEV</span>' : '') +
-      '<span class="te-watchlist-meta">' + esc(daysStr) + (addedDate ? ' \u00B7 ' + addedDate : '') + '</span>' +
-      (w.notes ? '<span class="te-watchlist-notes">' + esc(w.notes) + '</span>' : '') +
-      '</div>';
-  }
-  listHtml += '</div>';
-
-  c.innerHTML = statsHtml + listHtml +
-    '<div class="te-summary">Tell your AI \u201Ccheck my watchlist\u201D to refresh live EPSS + KEV scores and see what changed.</div>' +
-    '<div class="te-updated">Updated ' + new Date().toLocaleTimeString() + '</div>';
-}
-
-// ======================================================================
-// Tools Reference
+// Tools Reference (generic)
 // ======================================================================
 function renderToolsView() {
   document.getElementById('dashboard-title').textContent = 'Available Tools';
@@ -979,7 +477,7 @@ function renderToolsView() {
   if (cfg.toolCatalogIntro) {
     html = '<div class="te-tools-intro">' + cfg.toolCatalogIntro + '</div>';
   } else {
-    html = '<div class="te-tools-intro">This server provides <strong>' + TOOL_CATALOG.length + ' tools</strong> your AI can call directly. All tools are <strong>read-only</strong>.</div>';
+    html = '<div class="te-tools-intro">This server provides <strong>' + TOOL_CATALOG.length + ' tools</strong> your AI can call directly.</div>';
   }
 
   for (var i = 0; i < TOOL_CATALOG.length; i++) {
@@ -989,7 +487,7 @@ function renderToolsView() {
     var badgeClass = isApp ? ' interactive' : isStateful ? ' stateful' : '';
     var badgeLabel = isApp ? 'interactive' : isStateful ? 'stateful' : 'read-only';
     html += '<div class="te-tool-card"><div class="te-tool-card-head">' +
-      '<span class="te-tool-card-icon">' + t.icon + '</span>' +
+      '<span class="te-tool-card-icon">' + (t.icon || '') + '</span>' +
       '<span class="te-tool-card-name">' + esc(t.label) + '</span>' +
       '<span class="te-tool-card-badge' + badgeClass + '">' + badgeLabel + '</span>' +
       '</div>' +
@@ -1002,6 +500,427 @@ function renderToolsView() {
       '</div></div>';
   }
   c.innerHTML = html;
+}
+
+// ======================================================================
+// Generic Form Tab (form + empty state, then form + sections on submit)
+// ======================================================================
+function renderFormHtml(form, prefill) {
+  var val = prefill ? escAttr(String(prefill)) : '';
+  if (form.inputType === 'textarea') {
+    return '<div class="te-triage-form"><textarea class="te-triage-input" id="teFormInput" placeholder="' + escAttr(form.placeholder || '') + '" rows="3">' + esc(val) + '</textarea>' +
+      '<button class="te-search-btn" id="teFormBtn">' + esc(form.buttonText || 'Submit') + '</button></div>';
+  }
+  return '<div class="te-search-form"><input class="te-search-input" id="teFormInput" type="text" value="' + val + '" placeholder="' + escAttr(form.placeholder || '') + '" />' +
+    '<button class="te-search-btn" id="teFormBtn">' + esc(form.buttonText || 'Submit') + '</button></div>';
+}
+
+function renderFormTab(tab) {
+  var c = document.getElementById('teContent');
+  var emptyHtml = tab.emptyState
+    ? '<div class="te-prompt"><span class="te-prompt-text">' + esc(tab.emptyState.title || '') + '</span>' +
+      (tab.emptyState.hint ? '<span class="te-prompt-hint">' + esc(tab.emptyState.hint) + '</span>' : '') + '</div>'
+    : '';
+  c.innerHTML = renderFormHtml(tab.form) + '<div id="teSectionResult">' + emptyHtml + '</div>';
+  wireGenericForm(tab);
+  var inp = document.getElementById('teFormInput');
+  if (inp) inp.focus();
+}
+
+function renderSectionResult(tab, data) {
+  var resultEl = document.getElementById('teSectionResult');
+  if (!resultEl) return;
+  var html = renderSectionsHtml(data, tab.sections || []);
+  resultEl.innerHTML = html;
+  if (tab.titleKey) {
+    var tv = resolveKey(data, tab.titleKey);
+    if (tv) document.getElementById('dashboard-title').textContent = tab.label + ': ' + tv;
+  }
+}
+
+function wireGenericForm(tab) {
+  var inp = document.getElementById('teFormInput');
+  var btn = document.getElementById('teFormBtn');
+  if (!inp || !btn) return;
+  var form = tab.form;
+  function go() {
+    var q = inp.value.trim();
+    if (form.transform === 'uppercase') q = q.toUpperCase();
+    if (!q) return;
+    btn.disabled = true;
+    var loadText = (form.loadingText || form.buttonText || 'Loading') + '\u2026';
+    btn.textContent = loadText;
+    var resultEl = document.getElementById('teSectionResult');
+    if (resultEl) resultEl.innerHTML = '<div class="te-loading"><div class="te-spinner"></div><span>' + esc(loadText) + '</span></div>';
+    var args = {};
+    args[form.queryParam] = q;
+    callTool(tab.tool, args).then(function(res) {
+      var d = extractData(res);
+      if (d) { eS.tabData[tab.id] = d; renderSectionResult(tab, d); }
+    }).catch(function(e) { showError(e.message); })
+    .finally(function() { btn.disabled = false; btn.textContent = form.buttonText || 'Submit'; });
+  }
+  btn.addEventListener('click', go);
+  inp.addEventListener('keydown', function(e) { if (e.key === 'Enter') go(); });
+}
+
+// ======================================================================
+// Declarative Section Renderer
+// ======================================================================
+function renderSections(tabId, data) {
+  var tab = TAB_MAP[tabId];
+  var c = document.getElementById('teContent');
+  if (tab.titleKey) {
+    var tv = resolveKey(data, tab.titleKey);
+    if (tv) document.getElementById('dashboard-title').textContent = tab.label + ': ' + tv;
+  }
+
+  if (tab.form) {
+    var prefill = tab.form.queryParam ? resolveKey(data, tab.form.queryParam) : '';
+    c.innerHTML = renderFormHtml(tab.form, prefill) + '<div id="teSectionResult">' + renderSectionsHtml(data, tab.sections) + '</div>';
+    wireGenericForm(tab);
+    return;
+  }
+
+  c.innerHTML = renderSectionsHtml(data, tab.sections);
+}
+
+function renderSectionsHtml(data, sections) {
+  var html = '';
+  for (var i = 0; i < sections.length; i++) {
+    var sec = sections[i];
+    var fn = SEC_RENDERERS[sec.type];
+    if (fn) html += fn(data, sec);
+  }
+  return html;
+}
+
+var SEC_RENDERERS = {
+  'stats': secStats,
+  'label': secLabel,
+  'list': secList,
+  'scored-list': secScoredList,
+  'bands': secBands,
+  'banner': secBanner,
+  'text': secText,
+  'meta': secMeta,
+  'alerts': secAlerts,
+  'timestamp': secTimestamp,
+  'gauge': secGauge,
+  'card-grid': secCardGrid,
+  'empty-state': secEmptyState,
+  'explanations': secExplanations,
+};
+
+// --- Stats row ---
+function secStats(data, cfg) {
+  var items = cfg.items || [];
+  if (!items.length) return '';
+  var html = '<div class="te-stats-row">';
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    var value;
+    if (it.compute === 'count') {
+      value = (resolveKey(data, it.key) || []).length;
+    } else if (it.compute === 'countWhere') {
+      var arr = resolveKey(data, it.key) || [];
+      var w = it.where || {};
+      value = 0;
+      for (var j = 0; j < arr.length; j++) {
+        var fv = resolveKey(arr[j], w.field);
+        if (w.eq !== undefined && String(fv).toUpperCase() === String(w.eq).toUpperCase()) value++;
+        else if (w.truthy && fv) value++;
+      }
+    } else {
+      value = resolveKey(data, it.key);
+    }
+    if (it.hideIfZero && !value) continue;
+    var display = formatValue(value, it.format);
+    var color = it.color || '';
+    var badge = '';
+    if (it.badge) {
+      var bv = resolveKey(data, it.badge.key);
+      if (bv) badge = ' <span class="te-stat-badge">' + esc((it.badge.prefix||'') + bv + (it.badge.suffix||'')) + '</span>';
+    }
+    html += '<div class="te-stat-card">' +
+      '<div class="te-stat-value"' + (color ? ' style="color:' + color + '"' : '') + '>' + esc(display) + '</div>' +
+      '<div class="te-stat-label">' + esc(it.label || '') + badge + '</div>' +
+      '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+// --- Section label ---
+function secLabel(data, cfg) {
+  var mt = cfg.marginTop ? ' style="margin-top:16px"' : '';
+  var countText = '';
+  if (cfg.count) countText = cfg.count;
+  else if (cfg.countKey) {
+    var cv = resolveKey(data, cfg.countKey);
+    countText = (cv !== null && cv !== undefined ? String(cv) : '') + (cfg.countSuffix || '');
+  }
+  return '<div class="te-section-label"' + mt + '><span class="te-section-label-text">' + esc(cfg.text || '') + '</span>' +
+    (countText ? '<span class="te-section-label-count">' + esc(countText) + '</span>' : '') + '</div>';
+}
+
+// --- Item list ---
+function secList(data, cfg) {
+  var items = resolveKey(data, cfg.dataKey) || [];
+  if (!items.length) {
+    if (cfg.emptyTitle) return secEmptyState(data, {title: cfg.emptyTitle, hint: cfg.emptyHint});
+    return '';
+  }
+  var fields = cfg.fields || [];
+  var html = '<div class="te-item-list">';
+  for (var i = 0; i < items.length; i++) {
+    html += '<div class="te-item-row">';
+    for (var f = 0; f < fields.length; f++) {
+      html += renderField(items[i], fields[f]);
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+// --- Scored list (tier badge + score bar per item) ---
+function secScoredList(data, cfg) {
+  var items = resolveKey(data, cfg.dataKey) || [];
+  if (!items.length) return '';
+  var html = '<div class="te-scored-list">';
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i];
+    var tier = String(resolveKey(item, cfg.tierKey) || 'low').toLowerCase();
+    var score = resolveKey(item, cfg.scoreKey) || 0;
+    var pct = Math.round(score * 100);
+    var label = resolveKey(item, cfg.labelKey) || '';
+    var linkHtml;
+    if (cfg.linkTarget) {
+      linkHtml = '<span class="te-field-link te-scored-label" data-navigate-tab="' + escAttr(cfg.linkTarget) + '" data-navigate-value="' + escAttr(String(label)) + '">' + esc(String(label)) + '</span>';
+    } else {
+      linkHtml = '<span class="te-scored-label">' + esc(String(label)) + '</span>';
+    }
+    html += '<div class="te-scored-entry">' +
+      '<span class="te-badge te-badge-' + tier + '">' + esc(tier.toUpperCase()) + '</span>' +
+      linkHtml +
+      '<div class="te-bar-wrap"><div class="te-bar-fill te-bar-' + tier + '" style="width:' + pct + '%"></div></div>' +
+      '<span class="te-bar-pct">' + pct + '%</span>' +
+      '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+// --- Risk bands ---
+function secBands(data, cfg) {
+  var bands = resolveKey(data, cfg.dataKey) || {};
+  var total = resolveKey(data, cfg.totalKey) || 0;
+  var tiers = cfg.tiers || [];
+  var colors = cfg.colors || {};
+  var html = '<div class="te-bands">';
+  for (var i = 0; i < tiers.length; i++) {
+    var tier = tiers[i];
+    var band = bands[tier] || {};
+    var count = band.count || 0;
+    var pctNum = total > 0 ? (count / total) * 100 : 0;
+    var barWidth = Math.min(pctNum * 4, 100);
+    var color = colors[tier] || 'var(--text-muted)';
+    html += '<div class="te-band-row">' +
+      '<span class="te-band-label" style="color:' + color + '">' + tier + '</span>' +
+      '<div class="te-bar-wrap"><div class="te-bar-fill" style="width:' + barWidth + '%;background:' + color + '"></div></div>' +
+      '<span class="te-band-count">' + count.toLocaleString() + '</span>' +
+      '<span class="te-band-pct">' + esc(band.percent_of_total || '0%') + '</span>' +
+      '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+// --- Banner ---
+function secBanner(data, cfg) {
+  var value = resolveKey(data, cfg.dataKey);
+  var variant = value ? (cfg.present || {}) : (cfg.absent || {});
+  if (!variant.label) return '';
+  var styleClass = variant.style === 'error' ? 'te-banner-error' : 'te-banner-success';
+  var meta = '';
+  if (variant.metaKeys && value && typeof value === 'object') {
+    var parts = [];
+    for (var i = 0; i < variant.metaKeys.length; i++) {
+      var mk = variant.metaKeys[i];
+      var mv = resolveKey(value, mk.key);
+      if (mv) parts.push((mk.prefix || '') + String(mv) + (mk.suffix || ''));
+    }
+    meta = parts.join(' \u00B7 ');
+  } else if (variant.meta) {
+    meta = variant.meta;
+  }
+  var extra = '';
+  if (variant.badgeKey && value && typeof value === 'object') {
+    var bv = resolveKey(value, variant.badgeKey);
+    if (bv === variant.badgeMatch) {
+      extra = '<span class="te-alert-badge">' + esc(variant.badgeText || '') + '</span>';
+    }
+  }
+  return '<div class="te-banner ' + styleClass + '"><span class="te-banner-label">' + esc(variant.label) + '</span>' +
+    (meta ? '<span class="te-banner-meta">' + esc(meta) + '</span>' : '') + extra + '</div>';
+}
+
+// --- Text ---
+function secText(data, cfg) {
+  var text = cfg.value || resolveKey(data, cfg.key) || '';
+  if (!text) return '';
+  var mt = cfg.marginTop ? ' style="margin-top:10px"' : '';
+  return '<div class="te-summary"' + mt + '>' + esc(text) + '</div>';
+}
+
+// --- Meta (key-value pairs) ---
+function secMeta(data, cfg) {
+  var items = cfg.items || [];
+  var html = '';
+  for (var i = 0; i < items.length; i++) {
+    var mi = items[i];
+    var value = resolveKey(data, mi.key);
+    if (value === null || value === undefined) continue;
+    var display = formatValue(value, mi.format);
+    html += '<div class="te-meta-row"><span class="te-meta-label">' + esc(mi.label) + ':</span> ' + esc(display) + '</div>';
+  }
+  return html;
+}
+
+// --- Alerts ---
+function secAlerts(data, cfg) {
+  var alerts = resolveKey(data, cfg.dataKey) || [];
+  if (!alerts.length) return '';
+  var html = '<div class="te-alerts">';
+  for (var i = 0; i < alerts.length; i++) {
+    html += '<div class="te-alert-item">' + esc(alerts[i]) + '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+// --- Timestamp ---
+function secTimestamp() {
+  return '<div class="te-updated">Updated ' + new Date().toLocaleTimeString() + '</div>';
+}
+
+// --- Gauge (semicircle with needle) ---
+function secGauge(data, cfg) {
+  var prob = resolveKey(data, cfg.valueKey) || 0;
+  var assessment = resolveKey(data, cfg.assessmentKey) || '';
+  var label = cfg.label || '';
+  var color = prob >= 0.6 ? 'var(--error)' : prob >= 0.3 ? 'var(--warning)' : 'var(--success)';
+  return '<div class="te-gauge-card"><div class="te-gauge-label">' + esc(label) + '</div>' +
+    '<div class="te-gauge"><div class="te-gauge-bg"></div><div class="te-gauge-cover"></div>' +
+    '<div class="te-gauge-needle" style="transform:rotate(' + (-90 + prob * 180) + 'deg)"></div></div>' +
+    '<div class="te-stat-value" style="color:' + color + '">' + (prob * 100).toFixed(0) + '%</div>' +
+    '<div class="te-gauge-text">' + esc(assessment) + '</div></div>';
+}
+
+// --- Card grid ---
+function secCardGrid(data, cfg) {
+  var items = resolveKey(data, cfg.dataKey) || [];
+  if (!items.length) return '';
+  var html = '<div class="te-card-grid">';
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i];
+    var score = resolveKey(item, cfg.scoreKey) || 0;
+    var title = resolveKey(item, cfg.titleKey) || '';
+    var desc = resolveKey(item, cfg.descKey) || '';
+    var tags = resolveKey(item, cfg.tagsKey) || [];
+    var lv = score >= 0.6 ? 'high' : score >= 0.3 ? 'medium' : 'low';
+    var tagsHtml = '';
+    if (tags.length) {
+      tagsHtml = '<div class="te-card-tags">';
+      for (var t = 0; t < tags.length; t++) tagsHtml += '<span class="te-tag">' + esc(tags[t].replace(/_/g, ' ')) + '</span>';
+      tagsHtml += '</div>';
+    }
+    var msgData = cfg.messageTemplate ? cfg.messageTemplate.replace('{title}', title).replace('{score}', (score*100).toFixed(0)+'%').replace('{desc}', desc) : '';
+    var msgAttr = msgData ? ' data-send-message="' + escAttr(msgData) + '"' : '';
+    html += '<div class="te-info-card ' + lv + '"' + msgAttr + ' style="cursor:pointer">' +
+      '<div class="te-card-name">' + esc(title) + '</div>' +
+      '<span class="te-card-badge ' + lv + '">' + (score * 100).toFixed(0) + '%</span>' +
+      '<div class="te-card-desc">' + esc(desc) + '</div>' +
+      tagsHtml + '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+// --- Empty state ---
+function secEmptyState(data, cfg) {
+  return '<div class="te-prompt">' +
+    '<span class="te-prompt-text">' + esc(cfg.title || '') + '</span>' +
+    (cfg.hint ? '<span class="te-prompt-hint">' + cfg.hint + '</span>' : '') +
+    '</div>';
+}
+
+// --- Explanations (tier cards with descriptions) ---
+function secExplanations(data, cfg) {
+  var items = cfg.items || [];
+  if (!items.length) return '';
+  var html = '<div class="te-stats-row">';
+  for (var i = 0; i < items.length; i++) {
+    var ex = items[i];
+    html += '<div class="te-stat-card" style="border-left:3px solid ' + (ex.color || 'var(--text-muted)') + '">' +
+      '<div class="te-stat-label" style="color:' + (ex.color || 'var(--text-muted)') + ';font-weight:700;font-size:12px">' + esc(ex.label || '') + '</div>' +
+      '<div class="te-stat-desc">' + esc(ex.desc || '') + '</div>' +
+      '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+// ======================================================================
+// Field Renderer (for list items)
+// ======================================================================
+function renderField(item, field) {
+  var value = resolveKey(item, field.key);
+
+  if (field.condition) {
+    if (field.condition.eq !== undefined && String(value || '') !== String(field.condition.eq)) return '';
+    if (field.condition.neq !== undefined && String(value || '') === String(field.condition.neq)) return '';
+    if (field.condition.truthy && !value) return '';
+  }
+
+  var style = field.style || 'default';
+  var wParts = [];
+  if (field.width) wParts.push('width:' + field.width + 'px;flex-shrink:0');
+  if (field.flex) wParts.push('flex:' + field.flex + ';min-width:0');
+  if (field.align === 'right') wParts.push('margin-left:auto');
+  var inlineStyle = wParts.length ? ' style="' + wParts.join(';') + '"' : '';
+
+  switch (field.type || 'text') {
+    case 'link':
+      var target = field.linkTarget || '';
+      return '<span class="te-field-link" data-navigate-tab="' + escAttr(target) + '" data-navigate-value="' + escAttr(String(value || '')) + '"' + inlineStyle + '>' + esc(String(value || '')) + '</span>';
+
+    case 'badge':
+      var tierVal = String(value || '').toUpperCase();
+      var cm = field.colorMap || {};
+      var badgeClass = cm[tierVal] || cm[String(value || '')] || 'default';
+      return '<span class="te-badge te-badge-' + badgeClass + '"' + inlineStyle + '>' + esc(tierVal) + '</span>';
+
+    case 'bar':
+      var barVal = typeof value === 'number' ? value : 0;
+      var pct = Math.round(barVal * (field.multiplier || 100));
+      var barColor = 'default';
+      if (field.colorKey) barColor = String(resolveKey(item, field.colorKey) || 'default').toLowerCase();
+      return '<div class="te-bar-wrap"><div class="te-bar-fill te-bar-' + barColor + '" style="width:' + pct + '%"></div></div>' +
+        '<span class="te-bar-pct">' + pct + '%</span>';
+
+    case 'conditional-badge':
+      return '<span class="te-alert-badge"' + inlineStyle + '>' + esc(field.text || String(value || '')) + '</span>';
+
+    default:
+      var display = formatValue(value, field.format);
+      if (field.append) {
+        var av = resolveKey(item, field.append.key);
+        if (av) display += (field.append.sep || ' ') + formatValue(av, field.append.format);
+      }
+      return '<span class="te-field-text te-fstyle-' + style + '"' + inlineStyle + '>' + esc(display) + '</span>';
+  }
 }
 
 // ======================================================================
@@ -1048,7 +967,7 @@ function refreshCurrentTab() {
 }
 
 // ======================================================================
-// Bootstrap — override renderDashboard
+// Bootstrap
 // ======================================================================
 function bootstrap() {
   renderDashboard = function(data) {

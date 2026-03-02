@@ -1,4 +1,4 @@
-/* Tabbed engine — tab bar, period toolbar, view-specific components */
+/* Tabbed engine — generic layout, section components, field styles */
 
 /* Tab bar */
 .te-tab-bar {
@@ -41,8 +41,9 @@
 }
 @keyframes te-spin { to { transform: rotate(360deg); } }
 
-/* Summary */
+/* Summary / Timestamp */
 .te-summary { font-size: 13px; color: var(--text-muted); margin-top: 12px; line-height: 1.6; }
+.te-updated { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 10px; }
 
 /* Chart */
 .te-chart-wrap { position: relative; width: 100%; height: 280px; }
@@ -61,11 +62,65 @@
 .te-legend-item.hidden { opacity: 0.35; text-decoration: line-through; }
 .te-legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 
-/* Recession gauge */
-.te-prob-card { background: var(--bg-card); border-radius: 12px; padding: 22px; margin-bottom: 14px; text-align: center; }
-.te-prob-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
-.te-prob-value { font-size: 42px; font-weight: 700; margin: 6px 0; }
-.te-prob-text { font-size: 13px; color: var(--text-secondary); line-height: 1.6; max-width: 480px; margin: 0 auto; }
+/* Section: Stats row */
+.te-stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.te-stat-card { background: var(--bg-card); border-radius: 8px; padding: 14px; }
+.te-stat-value { font-size: 32px; font-weight: 700; color: var(--text-primary); line-height: 1; }
+.te-stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; margin-top: 4px; }
+.te-stat-badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; background: rgba(239,68,68,0.15); color: #fca5a5; margin-left: 4px; font-weight: 600; }
+.te-stat-desc { font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.5; }
+
+/* Section: Label */
+.te-section-label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.te-section-label-text { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.te-section-label-count { font-size: 11px; color: var(--text-muted); }
+
+/* Section: Item list */
+.te-item-list { display: flex; flex-direction: column; gap: 4px; }
+.te-item-row {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  border-radius: 6px; background: var(--bg-card); font-size: 12px;
+  flex-wrap: wrap; transition: background 0.15s;
+}
+.te-item-row:hover { background: var(--bg-hover); }
+
+/* Section: Scored list */
+.te-scored-list { display: flex; flex-direction: column; gap: 8px; }
+.te-scored-entry { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.te-scored-label { font-family: monospace; font-size: 11px; color: var(--text-muted); width: 130px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Section: Bands */
+.te-bands { display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; }
+.te-band-row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.te-band-label { font-weight: 700; font-size: 11px; width: 68px; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.04em; }
+.te-band-count { font-weight: 600; color: var(--text-primary); width: 80px; text-align: right; flex-shrink: 0; }
+.te-band-pct { color: var(--text-muted); width: 42px; text-align: right; flex-shrink: 0; font-size: 11px; }
+
+/* Section: Banner */
+.te-banner { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 6px; margin: 12px 0; font-size: 12px; flex-wrap: wrap; }
+.te-banner-error { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); }
+.te-banner-success { background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.2); }
+.te-banner-label { font-weight: 600; color: var(--text-primary); flex-shrink: 0; }
+.te-banner-meta { color: var(--text-muted); font-size: 11px; flex: 1; }
+
+/* Section: Meta rows */
+.te-meta-row { font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.5; }
+.te-meta-label { color: var(--text-secondary); font-weight: 500; margin-right: 4px; }
+
+/* Section: Alerts */
+.te-alerts { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.te-alert-item {
+  display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+  border-radius: 6px; background: rgba(59,130,246,0.06); border: 1px solid rgba(59,130,246,0.18);
+  font-size: 13px; color: var(--text-secondary); line-height: 1.5;
+}
+.te-alert-item::before { content: '\26A0'; flex-shrink: 0; font-size: 14px; }
+.te-alert-badge { font-size: 10px; color: #fca5a5; background: rgba(239,68,68,0.15); padding: 1px 6px; border-radius: 3px; white-space: nowrap; flex-shrink: 0; font-weight: 600; }
+
+/* Section: Gauge */
+.te-gauge-card { background: var(--bg-card); border-radius: 12px; padding: 22px; margin-bottom: 14px; text-align: center; }
+.te-gauge-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.te-gauge-text { font-size: 13px; color: var(--text-secondary); line-height: 1.6; max-width: 480px; margin: 0 auto; }
 .te-gauge { width: 180px; height: 90px; margin: 12px auto; position: relative; overflow: hidden; }
 .te-gauge-bg {
   width: 180px; height: 90px; border-radius: 90px 90px 0 0;
@@ -79,36 +134,60 @@
   border-radius: 2px; transition: transform 0.6s ease-out;
 }
 
-/* Signals */
-.te-section-label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.te-section-label-text { font-size: 14px; font-weight: 600; color: var(--text-primary); }
-.te-section-label-count { font-size: 11px; color: var(--text-muted); }
-.te-signals-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
-.te-signal-card { background: var(--bg-card); border-radius: 8px; padding: 14px; border-left: 3px solid var(--border); cursor: pointer; transition: all 0.15s; }
-.te-signal-card:hover { background: var(--bg-hover); }
-.te-signal-card.high { border-left-color: var(--error); }
-.te-signal-card.medium { border-left-color: var(--warning); }
-.te-signal-card.low { border-left-color: var(--success); }
-.te-signal-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
-.te-signal-badge { font-size: 11px; font-weight: 600; margin-top: 3px; padding: 1px 7px; border-radius: 4px; display: inline-block; }
-.te-signal-badge.high { background: rgba(239,68,68,0.19); color: #fca5a5; }
-.te-signal-badge.medium { background: rgba(245,158,11,0.19); color: #fcd34d; }
-.te-signal-badge.low { background: rgba(16,185,129,0.19); color: #6ee7b7; }
-.te-signal-desc { font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.5; }
-.te-signal-tags { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
+/* Section: Card grid */
+.te-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+.te-info-card { background: var(--bg-card); border-radius: 8px; padding: 14px; border-left: 3px solid var(--border); cursor: pointer; transition: all 0.15s; }
+.te-info-card:hover { background: var(--bg-hover); }
+.te-info-card.high { border-left-color: var(--error); }
+.te-info-card.medium { border-left-color: var(--warning); }
+.te-info-card.low { border-left-color: var(--success); }
+.te-card-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.te-card-badge { font-size: 11px; font-weight: 600; margin-top: 3px; padding: 1px 7px; border-radius: 4px; display: inline-block; }
+.te-card-badge.high { background: rgba(239,68,68,0.19); color: #fca5a5; }
+.te-card-badge.medium { background: rgba(245,158,11,0.19); color: #fcd34d; }
+.te-card-badge.low { background: rgba(16,185,129,0.19); color: #6ee7b7; }
+.te-card-desc { font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.5; }
+.te-card-tags { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
 .te-tag { font-size: 10px; padding: 1px 6px; border-radius: 3px; background: var(--border); color: var(--text-muted); }
 
-/* Banking */
-.te-health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 16px; }
-.te-health-stat { background: var(--bg-card); border-radius: 8px; padding: 14px; text-align: center; }
-.te-health-val { font-size: 22px; font-weight: 700; color: var(--text-primary); }
-.te-health-label { font-size: 10px; color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.03em; }
-.te-failures-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
-.te-failure-item { display: flex; justify-content: space-between; align-items: center; padding: 7px 12px; border-radius: 6px; margin-bottom: 3px; background: var(--bg-card); font-size: 12px; }
-.te-failure-name { color: var(--text-secondary); font-weight: 500; }
-.te-failure-meta { color: var(--text-muted); font-size: 11px; }
+/* Field: Link */
+.te-field-link {
+  cursor: pointer; font-family: monospace; font-size: 11px; color: var(--accent);
+  font-weight: 600; white-space: nowrap; flex-shrink: 0;
+  transition: color 0.12s, background 0.12s;
+}
+.te-field-link:hover { color: #93c5fd; }
 
-/* Search */
+/* Field: Badge */
+.te-badge { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 3px; white-space: nowrap; flex-shrink: 0; width: 58px; text-align: center; letter-spacing: 0.02em; }
+.te-badge-critical { background: rgba(239,68,68,0.15); color: #fca5a5; }
+.te-badge-high { background: rgba(249,115,22,0.15); color: #fdba74; }
+.te-badge-medium { background: rgba(234,179,8,0.15); color: #fde047; }
+.te-badge-low { background: rgba(16,185,129,0.15); color: #6ee7b7; }
+.te-badge-default { background: var(--border); color: var(--text-muted); }
+
+/* Field: Bar */
+.te-bar-wrap { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.te-bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+.te-bar-pct { font-size: 12px; font-weight: 700; color: var(--text-secondary); width: 38px; text-align: right; flex-shrink: 0; }
+.te-bar-critical { background: var(--error); }
+.te-bar-high { background: #f97316; }
+.te-bar-medium { background: var(--warning); }
+.te-bar-low { background: var(--success); }
+.te-bar-default { background: var(--accent); }
+
+/* Field: Text styles */
+.te-field-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.te-fstyle-default { color: var(--text-secondary); }
+.te-fstyle-primary { font-weight: 600; color: var(--text-primary); font-size: 13px; }
+.te-fstyle-secondary { color: var(--text-secondary); }
+.te-fstyle-secondary-flex { color: var(--text-secondary); flex: 1; min-width: 0; }
+.te-fstyle-muted { font-size: 11px; color: var(--text-muted); }
+.te-fstyle-muted-right { font-size: 11px; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; margin-left: auto; }
+.te-fstyle-mono { font-family: monospace; font-size: 10px; color: var(--text-muted); opacity: 0.6; }
+.te-fstyle-bold { font-weight: 700; color: var(--text-primary); }
+
+/* Form / Search */
 .te-search-form { display: flex; gap: 8px; margin-bottom: 14px; }
 .te-search-input {
   flex: 1; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border);
@@ -130,6 +209,21 @@
 .te-search-item-id { font-size: 11px; color: var(--accent); font-family: monospace; margin-left: 6px; }
 .te-search-item-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 
+/* Textarea form */
+.te-triage-form { display: flex; gap: 8px; margin-bottom: 14px; align-items: flex-start; }
+.te-triage-input {
+  flex: 1; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--bg-card); color: var(--text-secondary); font-size: 13px;
+  outline: none; transition: border-color 0.15s; font-family: inherit; resize: vertical; min-height: 58px;
+}
+.te-triage-input:focus { border-color: var(--accent); }
+.te-triage-input::placeholder { color: var(--text-muted); }
+
+/* Prompt / Empty state */
+.te-prompt { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 220px; text-align: center; color: var(--text-muted); gap: 6px; }
+.te-prompt-text { font-size: 14px; }
+.te-prompt-hint { font-size: 12px; opacity: 0.7; line-height: 1.6; }
+
 /* Tools catalog */
 .te-tools-intro { font-size: 13px; color: var(--text-secondary); line-height: 1.7; margin-bottom: 16px; }
 .te-tools-intro strong { color: var(--text-primary); font-weight: 600; }
@@ -148,133 +242,7 @@
 .te-tool-card-row code { color: var(--text-muted); font-family: monospace; font-size: 11px; }
 .te-tool-card-row .source { color: var(--text-muted); }
 
-/* Prompt */
-.te-prompt { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 220px; text-align: center; color: var(--text-muted); gap: 6px; }
-.te-prompt-text { font-size: 14px; }
-.te-prompt-hint { font-size: 12px; opacity: 0.7; }
-
 /* Footer */
 .te-footer { margin-top: 20px; padding-top: 10px; border-top: 1px solid var(--bg-card); font-size: 11px; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center; }
 .te-footer a { color: var(--text-muted); text-decoration: none; transition: color 0.15s; }
 .te-footer a:hover { color: var(--accent); }
-
-/* Updated timestamp */
-.te-updated { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 10px; }
-
-/* Vulnerability Intelligence views */
-.te-vuln-stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 14px; }
-.te-vuln-stat { background: var(--bg-card); border-radius: 8px; padding: 14px; }
-.te-vuln-stat-value { font-size: 32px; font-weight: 700; color: var(--text-primary); line-height: 1; }
-.te-vuln-stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; margin-top: 4px; }
-.te-vuln-stat-badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; background: rgba(239,68,68,0.15); color: #fca5a5; margin-left: 4px; font-weight: 600; }
-.te-vuln-stat-desc { font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.5; }
-
-.te-kev-list { display: flex; flex-direction: column; gap: 4px; }
-.te-kev-entry { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 6px; background: var(--bg-card); font-size: 12px; flex-wrap: wrap; transition: background 0.15s; }
-.te-kev-entry:hover { background: var(--bg-hover); }
-.te-kev-entry-full { align-items: flex-start; gap: 10px; }
-.te-kev-badge { font-family: monospace; font-size: 11px; color: var(--accent); font-weight: 600; white-space: nowrap; flex-shrink: 0; }
-.te-kev-vendor { color: var(--text-secondary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.te-kev-detail { flex: 1; min-width: 0; }
-.te-kev-name { font-size: 12px; color: var(--text-secondary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.te-kev-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
-.te-kev-ransomware { font-size: 10px; color: #fca5a5; background: rgba(239,68,68,0.15); padding: 1px 6px; border-radius: 3px; white-space: nowrap; flex-shrink: 0; font-weight: 600; }
-.te-kev-date { font-size: 11px; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
-
-.te-epss-list { display: flex; flex-direction: column; gap: 8px; }
-.te-epss-entry { display: flex; align-items: center; gap: 8px; font-size: 12px; }
-.te-epss-cve { font-family: monospace; font-size: 11px; color: var(--text-muted); width: 130px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.te-epss-bar-wrap { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
-.te-epss-bar { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
-.te-epss-pct { font-size: 12px; font-weight: 700; color: var(--text-secondary); width: 38px; text-align: right; flex-shrink: 0; }
-
-.te-vuln-severity { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 3px; white-space: nowrap; flex-shrink: 0; width: 58px; text-align: center; letter-spacing: 0.02em; }
-.te-sev-critical { background: rgba(239,68,68,0.15); color: #fca5a5; }
-.te-sev-high { background: rgba(249,115,22,0.15); color: #fdba74; }
-.te-sev-medium { background: rgba(234,179,8,0.15); color: #fde047; }
-.te-sev-low { background: rgba(16,185,129,0.15); color: #6ee7b7; }
-.te-sev-bar-critical { background: var(--error); }
-.te-sev-bar-high { background: #f97316; }
-.te-sev-bar-medium { background: var(--warning); }
-.te-sev-bar-low { background: var(--success); }
-
-.te-risk-bands { display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; }
-.te-risk-band { display: flex; align-items: center; gap: 10px; font-size: 12px; }
-.te-risk-band-label { font-weight: 700; font-size: 11px; width: 68px; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.04em; }
-.te-risk-band-track { flex: 1; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
-.te-risk-band-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
-.te-risk-band-count { font-weight: 600; color: var(--text-primary); width: 80px; text-align: right; flex-shrink: 0; }
-.te-risk-band-pct { color: var(--text-muted); width: 42px; text-align: right; flex-shrink: 0; font-size: 11px; }
-
-/* Clickable CVE IDs */
-.te-cve-link {
-  cursor: pointer;
-  transition: color 0.12s, background 0.12s, opacity 0.12s;
-}
-.te-kev-badge.te-cve-link:hover { background: rgba(59,130,246,0.18); color: #93c5fd; }
-.te-epss-cve.te-cve-link:hover { color: var(--accent); }
-.te-search-item-id.te-cve-link:hover { color: #93c5fd; }
-
-/* CVE Analyzer (vuln-lookup) */
-.te-kev-banner { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 6px; margin: 12px 0; font-size: 12px; flex-wrap: wrap; }
-.te-kev-banner-confirmed { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); }
-.te-kev-banner-clear { background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.2); }
-.te-kev-banner-label { font-weight: 600; color: var(--text-primary); flex-shrink: 0; }
-.te-kev-banner-meta { color: var(--text-muted); font-size: 11px; flex: 1; }
-.te-lookup-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.6; margin: 12px 0 4px; }
-.te-lookup-meta { font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.5; }
-.te-lookup-meta-label { color: var(--text-secondary); font-weight: 500; margin-right: 4px; }
-
-/* Scan Triage (vuln-triage) */
-.te-triage-form { display: flex; gap: 8px; margin-bottom: 14px; align-items: flex-start; }
-.te-triage-input {
-  flex: 1; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border);
-  background: var(--bg-card); color: var(--text-secondary); font-size: 13px;
-  outline: none; transition: border-color 0.15s; font-family: inherit; resize: vertical; min-height: 58px;
-}
-.te-triage-input:focus { border-color: var(--accent); }
-.te-triage-input::placeholder { color: var(--text-muted); }
-.te-triage-tier { margin-bottom: 16px; }
-.te-sev-text-medium { color: #eab308; }
-
-/* Vendor Exposure (vuln-vendor) */
-.te-vendor-table { display: flex; flex-direction: column; gap: 4px; }
-.te-vendor-row { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 7px 10px; border-radius: 6px; background: var(--bg-card); transition: background 0.15s; }
-.te-vendor-row:hover { background: var(--bg-hover); }
-.te-vendor-product { width: 160px; flex-shrink: 0; color: var(--text-secondary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.te-vendor-count { font-weight: 700; color: var(--text-primary); width: 30px; text-align: right; flex-shrink: 0; }
-.te-vendor-norw { width: 50px; flex-shrink: 0; }
-
-/* Personalized Briefing Alerts */
-.te-briefing-alerts { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
-.te-briefing-alert {
-  display: flex; align-items: center; gap: 8px; padding: 10px 14px;
-  border-radius: 6px; background: rgba(59,130,246,0.06); border: 1px solid rgba(59,130,246,0.18);
-  font-size: 13px; color: var(--text-secondary); line-height: 1.5;
-}
-.te-briefing-alert::before { content: '\26A0'; flex-shrink: 0; font-size: 14px; }
-
-/* My Stack (vuln-stack) */
-.te-stack-list { display: flex; flex-direction: column; gap: 4px; }
-.te-stack-entry {
-  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
-  border-radius: 6px; background: var(--bg-card); font-size: 12px;
-  transition: background 0.15s;
-}
-.te-stack-entry:hover { background: var(--bg-hover); }
-.te-stack-product { font-weight: 600; color: var(--text-primary); min-width: 140px; flex-shrink: 0; font-size: 13px; }
-.te-stack-vendor { color: var(--text-muted); font-size: 11px; flex-shrink: 0; min-width: 100px; }
-.te-stack-cpe { font-family: monospace; font-size: 10px; color: var(--text-muted); opacity: 0.6; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* Watchlist (vuln-watchlist) */
-.te-watchlist { display: flex; flex-direction: column; gap: 6px; }
-.te-watchlist-entry {
-  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
-  border-radius: 6px; background: var(--bg-card); font-size: 12px;
-  flex-wrap: wrap; transition: background 0.15s;
-}
-.te-watchlist-entry:hover { background: var(--bg-hover); }
-.te-watchlist-epss { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
-.te-watchlist-composite { font-weight: 600; color: var(--text-secondary); font-size: 12px; white-space: nowrap; }
-.te-watchlist-meta { font-size: 10px; color: var(--text-muted); white-space: nowrap; margin-left: auto; }
-.te-watchlist-notes { font-size: 11px; color: var(--text-muted); font-style: italic; width: 100%; padding-left: 66px; }
