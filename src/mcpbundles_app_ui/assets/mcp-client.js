@@ -463,17 +463,22 @@ function parseToolResult(result) {
   return null;
 }
 
-new ResizeObserver(() => {
+var _lastW = 0, _lastH = 0;
+new ResizeObserver((entries) => {
+  const entry = entries[0];
+  if (!entry) return;
   const { body, documentElement: html } = document;
   const bodyStyle = getComputedStyle(body);
   const htmlStyle = getComputedStyle(html);
-  const width = body.scrollWidth;
-  const height =
+  const width = Math.ceil(body.scrollWidth);
+  const height = Math.ceil(
     body.scrollHeight +
     (parseFloat(bodyStyle.borderTopWidth) || 0) +
     (parseFloat(bodyStyle.borderBottomWidth) || 0) +
     (parseFloat(htmlStyle.borderTopWidth) || 0) +
-    (parseFloat(htmlStyle.borderBottomWidth) || 0);
+    (parseFloat(htmlStyle.borderBottomWidth) || 0));
+  if (width === _lastW && height === _lastH) return;
+  _lastW = width; _lastH = height;
   window.parent.postMessage({
     jsonrpc: '2.0',
     method: 'ui/notifications/size-changed',
