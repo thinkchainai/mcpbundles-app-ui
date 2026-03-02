@@ -244,3 +244,37 @@
 .te-vendor-product { width: 160px; flex-shrink: 0; color: var(--text-secondary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .te-vendor-count { font-weight: 700; color: var(--text-primary); width: 30px; text-align: right; flex-shrink: 0; }
 .te-vendor-norw { width: 50px; flex-shrink: 0; }
+
+/* Personalized Briefing Alerts */
+.te-briefing-alerts { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.te-briefing-alert {
+  display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+  border-radius: 6px; background: rgba(59,130,246,0.06); border: 1px solid rgba(59,130,246,0.18);
+  font-size: 13px; color: var(--text-secondary); line-height: 1.5;
+}
+.te-briefing-alert::before { content: '\26A0'; flex-shrink: 0; font-size: 14px; }
+
+/* My Stack (vuln-stack) */
+.te-stack-list { display: flex; flex-direction: column; gap: 4px; }
+.te-stack-entry {
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  border-radius: 6px; background: var(--bg-card); font-size: 12px;
+  transition: background 0.15s;
+}
+.te-stack-entry:hover { background: var(--bg-hover); }
+.te-stack-product { font-weight: 600; color: var(--text-primary); min-width: 140px; flex-shrink: 0; font-size: 13px; }
+.te-stack-vendor { color: var(--text-muted); font-size: 11px; flex-shrink: 0; min-width: 100px; }
+.te-stack-cpe { font-family: monospace; font-size: 10px; color: var(--text-muted); opacity: 0.6; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Watchlist (vuln-watchlist) */
+.te-watchlist { display: flex; flex-direction: column; gap: 6px; }
+.te-watchlist-entry {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  border-radius: 6px; background: var(--bg-card); font-size: 12px;
+  flex-wrap: wrap; transition: background 0.15s;
+}
+.te-watchlist-entry:hover { background: var(--bg-hover); }
+.te-watchlist-epss { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+.te-watchlist-composite { font-weight: 600; color: var(--text-secondary); font-size: 12px; white-space: nowrap; }
+.te-watchlist-meta { font-size: 10px; color: var(--text-muted); white-space: nowrap; margin-left: auto; }
+.te-watchlist-notes { font-size: 11px; color: var(--text-muted); font-style: italic; width: 100%; padding-left: 66px; }
