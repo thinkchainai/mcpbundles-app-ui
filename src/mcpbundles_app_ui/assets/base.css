@@ -1,7 +1,25 @@
 /* Reset */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Host style variable bridge — Claude/ChatGPT inject --color-* tokens.
+   When present they override the theme's --bg-page etc. via this layer.
+   When absent the var() falls through to the theme value already on :root. */
+:root {
+  --bg-page:       var(--color-background-primary, var(--_bg-page));
+  --bg-card:       var(--color-background-secondary, var(--_bg-card));
+  --bg-hover:      var(--color-background-tertiary, var(--_bg-hover));
+  --text-primary:  var(--color-text-primary, var(--_text-primary));
+  --text-secondary:var(--color-text-secondary, var(--_text-secondary));
+  --text-muted:    var(--color-text-tertiary, var(--_text-muted));
+  --border:        var(--color-border-secondary, var(--_border));
+  --font-family:   var(--font-sans, var(--_font-family));
+}
+
 /* Base */
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
 body {
   font-family: var(--font-family);
   background: var(--bg-page);
@@ -9,13 +27,21 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Dashboard container */
 .dashboard {
   max-width: 1200px;
+  width: 100%;
   margin: 0 auto;
   padding: 32px 24px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* Header */
@@ -90,6 +116,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  flex: 1;
+  min-height: 0;
 }
 
 /* Button */
@@ -118,29 +146,24 @@ body {
   filter: none;
 }
 
-/* Loading */
+/* Loading — skeleton shimmer */
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
 
-.loading-spinner {
-  display: inline-block;
-  width: 20px;
-  height: 20px;
-  border: 2px solid var(--border);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+.skeleton-block {
+  background: linear-gradient(90deg, var(--border) 25%, var(--bg-hover) 50%, var(--border) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
 }
 
 .spin {
   animation: spin 1s linear infinite;
-}
-
-.loading-spinner.large {
-  width: 32px;
-  height: 32px;
-  border-width: 3px;
 }
 
 .loading-placeholder {
@@ -169,7 +192,7 @@ body {
 .loading-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(255, 255, 255, 0.9);
+  background: color-mix(in srgb, var(--bg-page) 90%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -187,3 +210,10 @@ body {
 }
 
 .hidden { display: none !important; }
+
+/* Responsive */
+@media (max-width: 600px) {
+  .dashboard { padding: 16px 12px; }
+  .dashboard-title { font-size: 1.375rem; }
+  .dashboard-header { margin-bottom: 20px; }
+}

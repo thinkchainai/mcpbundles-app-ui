@@ -61,10 +61,13 @@ class AppRenderer:
         )
         has_tabs = bool(app_config and "tabs" in app_config)
         has_chart = bool(app_config and not has_tabs)
+        has_gates = bool(app_config and "gates" in app_config)
         chart_engine_js = _load_asset("chart-engine.js") if has_chart else ""
         chart_engine_css = _load_asset("chart-engine.css") if has_chart else ""
         tabbed_engine_js = _load_asset("tabbed-engine.js") if has_tabs else ""
         tabbed_engine_css = _load_asset("tabbed-engine.css") if has_tabs else ""
+        gate_engine_js = _load_asset("gate-engine.js") if has_gates else ""
+        gate_engine_css = _load_asset("gate-engine.css") if has_gates else ""
 
         return f"""<!DOCTYPE html>
 <html lang="en">
@@ -79,6 +82,7 @@ class AppRenderer:
 {_load_asset("components.css")}
 {chart_engine_css}
 {tabbed_engine_css}
+{gate_engine_css}
   </style>
   {custom_head or ''}
 </head>
@@ -103,6 +107,7 @@ class AppRenderer:
   <script>
 {_load_asset("mcp-client.js")}
 {app_config_js}
+{gate_engine_js}
 {chart_engine_js}
 {tabbed_engine_js}
 {_load_asset("components.js")}
@@ -184,7 +189,7 @@ class AppRenderer:
             return f"""{pad}<div class="card">
 {pad}  {title_html}
 {pad}  <div class="chart-container" data-bind="{component.bind}" data-type="bar" style="height: {component.height}">
-{pad}    <div class="loading-placeholder"><div class="loading-spinner"></div><span>Loading chart...</span></div>
+{pad}    <div class="loading-placeholder"><div class="skeleton-block" style="height:56px;border-radius:8px;width:100%"></div><span>Loading chart...</span></div>
 {pad}  </div>
 {pad}</div>"""
 
@@ -193,7 +198,7 @@ class AppRenderer:
             return f"""{pad}<div class="card">
 {pad}  {title_html}
 {pad}  <div class="comparison-chart" data-bind-current="{component.bind_current}" data-bind-previous="{component.bind_previous}" data-label-current="{component.label_current}" data-label-previous="{component.label_previous}">
-{pad}    <div class="loading-placeholder"><div class="loading-spinner"></div><span>Loading...</span></div>
+{pad}    <div class="loading-placeholder"><div class="skeleton-block" style="height:14px;border-radius:4px;width:100%"></div><span>Loading...</span></div>
 {pad}  </div>
 {pad}</div>"""
 
@@ -202,7 +207,7 @@ class AppRenderer:
             return f"""{pad}<div class="card">
 {pad}  {title_html}
 {pad}  <div class="funnel-chart" data-bind="{component.bind}">
-{pad}    <div class="loading-placeholder"><div class="loading-spinner"></div><span>Loading stages...</span></div>
+{pad}    <div class="loading-placeholder"><div class="skeleton-block" style="height:14px;border-radius:4px;width:100%"></div><span>Loading stages...</span></div>
 {pad}  </div>
 {pad}</div>"""
 
@@ -211,7 +216,7 @@ class AppRenderer:
             return f"""{pad}<div class="card">
 {pad}  {title_html}
 {pad}  <div class="distribution-chart" data-bind="{component.bind}">
-{pad}    <div class="loading-placeholder"><div class="loading-spinner"></div><span>Loading...</span></div>
+{pad}    <div class="loading-placeholder"><div class="skeleton-block" style="height:14px;border-radius:4px;width:100%"></div><span>Loading...</span></div>
 {pad}  </div>
 {pad}</div>"""
 
@@ -221,7 +226,7 @@ class AppRenderer:
 {pad}  <p class="card-subtitle">Choose which pipeline to analyze</p>
 {pad}  <div id="list-picker" class="list-grid">
 {pad}    <div class="loading-placeholder">
-{pad}      <div class="loading-spinner large"></div>
+{pad}      <div class="skeleton-block" style="height:56px;border-radius:8px;width:100%"></div>
 {pad}      <span>Loading lists...</span>
 {pad}    </div>
 {pad}  </div>
@@ -232,7 +237,7 @@ class AppRenderer:
             return f"""{pad}<div class="card">
 {pad}  {title_html}
 {pad}  <div class="recent-list" data-bind="{component.bind}" data-max="{component.max_items}">
-{pad}    <div class="loading-placeholder"><div class="loading-spinner"></div><span>Loading...</span></div>
+{pad}    <div class="loading-placeholder"><div class="skeleton-block" style="height:14px;border-radius:4px;width:100%"></div><span>Loading...</span></div>
 {pad}  </div>
 {pad}</div>"""
 
@@ -241,7 +246,7 @@ class AppRenderer:
             return f"""{pad}<div class="card">
 {pad}  {title_html}
 {pad}  <div class="bar-list" data-bind="{component.bind}" data-max="{component.max_items}" data-show-percent="{str(component.show_percent).lower()}">
-{pad}    <div class="loading-placeholder"><div class="loading-spinner"></div><span>Loading...</span></div>
+{pad}    <div class="loading-placeholder"><div class="skeleton-block" style="height:14px;border-radius:4px;width:100%"></div><span>Loading...</span></div>
 {pad}  </div>
 {pad}</div>"""
 
@@ -250,7 +255,7 @@ class AppRenderer:
             return f"""{pad}<div class="card">
 {pad}  {title_html}
 {pad}  <div class="stage-list" data-bind="{component.bind}">
-{pad}    <div class="loading-placeholder"><div class="loading-spinner"></div><span>Loading stages...</span></div>
+{pad}    <div class="loading-placeholder"><div class="skeleton-block" style="height:14px;border-radius:4px;width:100%"></div><span>Loading stages...</span></div>
 {pad}  </div>
 {pad}</div>"""
 

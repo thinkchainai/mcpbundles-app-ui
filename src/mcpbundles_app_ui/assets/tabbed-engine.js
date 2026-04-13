@@ -66,6 +66,14 @@ function resolveKey(obj, key) {
   return val;
 }
 
+function interpolateTemplate(template, item, title, score, desc) {
+  var result = template.replace('{title}', title).replace('{score}', (score*100).toFixed(0)+'%').replace('{desc}', desc);
+  return result.replace(/\{(\w+)\}/g, function(match, key) {
+    var val = resolveKey(item, key);
+    return val !== null && val !== undefined ? String(val) : match;
+  });
+}
+
 function formatValue(v, fmt) {
   if (v === null || v === undefined) return '\u2014';
   if (fmt === 'number' && typeof v === 'number') return v.toLocaleString();
@@ -85,6 +93,11 @@ function drawChart(containerId, series, hiddenMap) {
   var container = document.getElementById(containerId);
   if (!container) return;
   container.innerHTML = '';
+
+  var cs = getComputedStyle(document.documentElement);
+  var gridColor = cs.getPropertyValue('--border').trim() || 'rgba(255,255,255,0.06)';
+  var labelColor = cs.getPropertyValue('--text-muted').trim() || 'rgba(255,255,255,0.4)';
+  var crosshairColor = cs.getPropertyValue('--border').trim() || 'rgba(255,255,255,0.15)';
 
   var visible = [];
   for (var i = 0; i < series.length; i++) { if (!hiddenMap[i]) visible.push({ idx: i, s: series[i] }); }
@@ -128,10 +141,11 @@ function drawChart(containerId, series, hiddenMap) {
   function xS(t) { return pad.l + (t - xMn) / (xMx - xMn) * pW; }
   function yS(v, ax) { return pad.t + pH - (v - yB[ax].mn) / (yB[ax].mx - yB[ax].mn) * pH; }
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
+  ctx.strokeStyle = gridColor; ctx.lineWidth = 1; ctx.globalAlpha = 0.3;
   for (var g = 0; g <= 4; g++) { var gy = pad.t + (pH/4)*g; ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(pad.l+pW, gy); ctx.stroke(); }
+  ctx.globalAlpha = 1.0;
 
-  ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '10px -apple-system,sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = labelColor; ctx.font = '10px -apple-system,sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
   for (var g = 0; g <= 4; g++) { var val = yB[0].mx - (yB[0].mx - yB[0].mn) * (g/4); ctx.fillText(fmtVal(val), pad.l-6, pad.t+(pH/4)*g); }
   if (hasY1) { ctx.textAlign = 'left'; for (var g = 0; g <= 4; g++) { var val = yB[1].mx - (yB[1].mx - yB[1].mn) * (g/4); ctx.fillText(fmtVal(val), pad.l+pW+6, pad.t+(pH/4)*g); } }
 
@@ -168,9 +182,9 @@ function drawChart(containerId, series, hiddenMap) {
     var mx = ev.clientX - cr.left, my = ev.clientY - cr.top;
     crossCtx.clearRect(0, 0, W, H);
     if (mx < pad.l || mx > pad.l+pW || my < pad.t || my > pad.t+pH) { tt.style.display = 'none'; return; }
-    crossCtx.strokeStyle = 'rgba(255,255,255,0.15)'; crossCtx.lineWidth = 1; crossCtx.setLineDash([4, 3]);
+    crossCtx.strokeStyle = crosshairColor; crossCtx.lineWidth = 1; crossCtx.globalAlpha = 0.5; crossCtx.setLineDash([4, 3]);
     crossCtx.beginPath(); crossCtx.moveTo(mx, pad.t); crossCtx.lineTo(mx, pad.t+pH); crossCtx.stroke();
-    crossCtx.setLineDash([]);
+    crossCtx.globalAlpha = 1.0; crossCtx.setLineDash([]);
     var hoverT = xMn + (mx - pad.l) / pW * (xMx - xMn);
     var lines = [], closestDate = null;
     for (var vi = 0; vi < visible.length; vi++) {
@@ -202,10 +216,26 @@ function buildUI() {
   var root = document.querySelector('.dashboard-content');
   root.innerHTML = '';
 
+  var tabBarWrap = document.createElement('div');
+  tabBarWrap.className = 'te-tab-bar-wrap';
+
   var tabBar = document.createElement('div');
   tabBar.className = 'te-tab-bar';
   tabBar.id = 'teTabBar';
-  root.appendChild(tabBar);
+  tabBarWrap.appendChild(tabBar);
+
+  if (canGoFullscreen()) {
+    var fsBtn = document.createElement('button');
+    fsBtn.className = 'te-fullscreen-btn';
+    fsBtn.title = 'Expand to panel';
+    fsBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>';
+    fsBtn.addEventListener('click', function() {
+      requestDisplayMode('fullscreen');
+    });
+    tabBarWrap.appendChild(fsBtn);
+  }
+
+  root.appendChild(tabBarWrap);
 
   var toolbar = document.createElement('div');
   toolbar.className = 'te-toolbar hidden';
@@ -235,6 +265,11 @@ function buildUI() {
   wireToolbar();
 
   content.addEventListener('click', function(e) {
+    var expandCard = e.target.closest('[data-card-expand]');
+    if (expandCard && !e.target.closest('[data-send-message]')) {
+      expandCard.classList.toggle('expanded');
+      return;
+    }
     var el = e.target.closest('[data-navigate-tab]');
     if (el) {
       var targetTab = el.dataset.navigateTab;
@@ -260,10 +295,12 @@ function navigateToTab(targetTabId, value) {
   document.getElementById('teToolbar').className = tab.hasPeriod ? 'te-toolbar' : 'te-toolbar hidden';
 
   if (tab.form) {
-    document.getElementById('dashboard-title').textContent = tab.label + ': ' + value;
     var c = document.getElementById('teContent');
     c.innerHTML = renderFormHtml(tab.form, value) +
-      '<div id="teSectionResult"><div class="te-loading"><div class="te-spinner"></div><span>Loading\u2026</span></div></div>';
+      '<div id="teSectionResult"><div class="te-loading">' +
+      '<div class="te-skeleton-row"><div class="skeleton-block te-skeleton-line"></div></div>' +
+      '<div class="te-skeleton-row"><div class="skeleton-block te-skeleton-line medium"></div></div>' +
+      '<span>Loading\u2026</span></div></div>';
     wireGenericForm(tab);
     updateHeaderActions(targetTabId);
 
@@ -272,6 +309,7 @@ function navigateToTab(targetTabId, value) {
     callTool(tab.tool, args).then(function(res) {
       var d = extractData(res);
       if (d) {
+        if (typeof window.__checkGate === 'function' && window.__checkGate(d)) return;
         eS.tabData[targetTabId] = d;
         renderSectionResult(tab, d);
       }
@@ -305,7 +343,6 @@ function switchTab(tabId) {
   var tab = TAB_MAP[tabId];
   document.getElementById('teToolbar').className = tab.hasPeriod ? 'te-toolbar' : 'te-toolbar hidden';
   if (tab.hasPeriod) setPeriodUI(eS.tabPeriod[tabId] || DEF_PERIOD);
-  document.getElementById('dashboard-title').textContent = tab.label;
 
   if (tab.type === 'tools') { renderToolsView(); updateHeaderActions(tabId); return; }
   if (eS.tabData[tabId]) { renderTabContent(tabId, eS.tabData[tabId]); updateHeaderActions(tabId); return; }
@@ -329,7 +366,10 @@ function switchTab(tabId) {
   callTool(tab.tool, args).then(function(result) {
     if (eS.activeTab !== tabId) return;
     var data = extractData(result);
-    if (data) { eS.tabData[tabId] = data; renderTabContent(tabId, data); } else teShowLoading('No data available');
+    if (data) {
+      if (typeof window.__checkGate === 'function' && window.__checkGate(data)) return;
+      eS.tabData[tabId] = data; renderTabContent(tabId, data);
+    } else teShowLoading('No data available');
   }).catch(function(err) { if (eS.activeTab === tabId) showError(err.message); });
   updateHeaderActions(tabId);
 }
@@ -350,6 +390,7 @@ function matchesTabData(tab, data) {
 }
 
 function onInitialData(data) {
+  if (typeof window.__checkGate === 'function' && window.__checkGate(data)) return;
   buildUI();
   var tabId = state.toolName ? TOOL_TO_TAB[state.toolName] : null;
   if (!tabId) {
@@ -395,7 +436,15 @@ function updateHeaderActions(tabId) {
   );
 }
 
-function teShowLoading(t) { document.getElementById('teContent').innerHTML = '<div class="te-loading"><div class="te-spinner"></div><span>' + esc(t) + '</span></div>'; }
+function teShowLoading(t) {
+  document.getElementById('teContent').innerHTML =
+    '<div class="te-loading">' +
+    '<div class="te-skeleton-stats"><div class="skeleton-block te-skeleton-stat"></div><div class="skeleton-block te-skeleton-stat"></div></div>' +
+    '<div class="te-skeleton-row"><div class="skeleton-block te-skeleton-line"></div></div>' +
+    '<div class="te-skeleton-row"><div class="skeleton-block te-skeleton-line medium"></div></div>' +
+    '<div class="te-skeleton-row"><div class="skeleton-block te-skeleton-line short"></div></div>' +
+    '<span>' + esc(t) + '</span></div>';
+}
 function renderPromptView(title, hint) { document.getElementById('teContent').innerHTML = '<div class="te-prompt"><span class="te-prompt-text">' + esc(title) + '</span><span class="te-prompt-hint">' + esc(hint) + '</span></div>'; }
 
 // ======================================================================
@@ -404,7 +453,7 @@ function renderPromptView(title, hint) { document.getElementById('teContent').in
 function renderChartView(data) {
   var c = document.getElementById('teContent');
   c.innerHTML = '<div class="te-chart-wrap" id="teChartArea"></div><div class="te-legend" id="teLeg"></div><div class="te-summary" id="teSum"></div>';
-  if (data.title) document.getElementById('dashboard-title').textContent = data.title;
+  // data.title is available for chart subtitle but header stays stable
   if (data.summary) document.getElementById('teSum').textContent = data.summary;
   var series = data.series || [];
   if (!series.length) { c.innerHTML = '<div class="te-loading"><span>No chart data available</span></div>'; return; }
@@ -423,14 +472,12 @@ function renderChartView(data) {
 // Search (generic — form + results)
 // ======================================================================
 function renderSearchForm(tab) {
-  document.getElementById('dashboard-title').textContent = 'Search';
   var placeholder = (tab && tab.searchPlaceholder) || 'Search...';
   document.getElementById('teContent').innerHTML = '<div class="te-search-form"><input class="te-search-input" id="teSi" type="text" placeholder="' + escAttr(placeholder) + '" /><button class="te-search-btn" id="teSb">Search</button></div><div id="teSr"></div>';
   wireSearch(); document.getElementById('teSi').focus();
 }
 
 function renderSearchResults(data) {
-  document.getElementById('dashboard-title').textContent = data.query ? 'Search: ' + data.query : 'Search';
   var searchTab = null;
   for (var i = 0; i < TABS.length; i++) { if (TABS[i].type === 'search') { searchTab = TABS[i]; break; } }
   var placeholder = (searchTab && searchTab.searchPlaceholder) || 'Search...';
@@ -448,7 +495,7 @@ function wireSearch() {
     var queryParam = searchTab.searchQueryParam || 'query';
     var limitParam = searchTab.searchLimitParam || 'limit';
     args[queryParam] = q; args[limitParam] = 20;
-    callTool(searchTab.tool,args).then(function(res){var d=extractData(res);if(d){eS.tabData[searchTab.id]=d;showSearchItems(d);document.getElementById('dashboard-title').textContent='Search: '+q;}}).catch(function(e){showError(e.message);}).finally(function(){btn.disabled=false;btn.textContent='Search';}); }
+    callTool(searchTab.tool,args).then(function(res){var d=extractData(res);if(d){if(typeof window.__checkGate==='function'&&window.__checkGate(d))return;eS.tabData[searchTab.id]=d;showSearchItems(d);}}).catch(function(e){showError(e.message);}).finally(function(){btn.disabled=false;btn.textContent='Search';}); }
   btn.addEventListener('click', go); inp.addEventListener('keydown', function(e){if(e.key==='Enter')go();});
 }
 
@@ -470,7 +517,6 @@ function showSearchItems(data) {
 // Tools Reference (generic)
 // ======================================================================
 function renderToolsView() {
-  document.getElementById('dashboard-title').textContent = 'Available Tools';
   var c = document.getElementById('teContent');
 
   var html = '';
@@ -532,10 +578,6 @@ function renderSectionResult(tab, data) {
   if (!resultEl) return;
   var html = renderSectionsHtml(data, tab.sections || []);
   resultEl.innerHTML = html;
-  if (tab.titleKey) {
-    var tv = resolveKey(data, tab.titleKey);
-    if (tv) document.getElementById('dashboard-title').textContent = tab.label + ': ' + tv;
-  }
 }
 
 function wireGenericForm(tab) {
@@ -551,12 +593,18 @@ function wireGenericForm(tab) {
     var loadText = (form.loadingText || form.buttonText || 'Loading') + '\u2026';
     btn.textContent = loadText;
     var resultEl = document.getElementById('teSectionResult');
-    if (resultEl) resultEl.innerHTML = '<div class="te-loading"><div class="te-spinner"></div><span>' + esc(loadText) + '</span></div>';
+    if (resultEl) resultEl.innerHTML = '<div class="te-loading">' +
+      '<div class="te-skeleton-row"><div class="skeleton-block te-skeleton-line"></div></div>' +
+      '<div class="te-skeleton-row"><div class="skeleton-block te-skeleton-line medium"></div></div>' +
+      '<span>' + esc(loadText) + '</span></div>';
     var args = {};
     args[form.queryParam] = q;
     callTool(tab.tool, args).then(function(res) {
       var d = extractData(res);
-      if (d) { eS.tabData[tab.id] = d; renderSectionResult(tab, d); }
+      if (d) {
+        if (typeof window.__checkGate === 'function' && window.__checkGate(d)) return;
+        eS.tabData[tab.id] = d; renderSectionResult(tab, d);
+      }
     }).catch(function(e) { showError(e.message); })
     .finally(function() { btn.disabled = false; btn.textContent = form.buttonText || 'Submit'; });
   }
@@ -570,11 +618,6 @@ function wireGenericForm(tab) {
 function renderSections(tabId, data) {
   var tab = TAB_MAP[tabId];
   var c = document.getElementById('teContent');
-  if (tab.titleKey) {
-    var tv = resolveKey(data, tab.titleKey);
-    if (tv) document.getElementById('dashboard-title').textContent = tab.label + ': ' + tv;
-  }
-
   if (tab.form) {
     var prefill = tab.form.queryParam ? resolveKey(data, tab.form.queryParam) : '';
     c.innerHTML = renderFormHtml(tab.form, prefill) + '<div id="teSectionResult">' + renderSectionsHtml(data, tab.sections) + '</div>';
@@ -821,30 +864,92 @@ function secGauge(data, cfg) {
 // --- Card grid ---
 function secCardGrid(data, cfg) {
   var items = resolveKey(data, cfg.dataKey) || [];
-  if (!items.length) return '';
-  var html = '<div class="te-card-grid">';
+  if (!items.length) {
+    if (cfg.emptyTitle) return secEmptyState(data, {title: cfg.emptyTitle, hint: cfg.emptyHint});
+    return '';
+  }
+  var gridId = 'teCardGrid' + Math.random().toString(36).slice(2, 8);
+  var html = '<div class="te-card-grid" id="' + gridId + '">';
   for (var i = 0; i < items.length; i++) {
     var item = items[i];
-    var score = resolveKey(item, cfg.scoreKey) || 0;
+    var score = cfg.scoreKey ? (resolveKey(item, cfg.scoreKey) || 0) : 0;
     var title = resolveKey(item, cfg.titleKey) || '';
     var desc = resolveKey(item, cfg.descKey) || '';
     var tags = resolveKey(item, cfg.tagsKey) || [];
-    var lv = score >= 0.6 ? 'high' : score >= 0.3 ? 'medium' : 'low';
+    var tier = cfg.tierKey ? String(resolveKey(item, cfg.tierKey) || '').toLowerCase() : '';
     var tagsHtml = '';
     if (tags.length) {
       tagsHtml = '<div class="te-card-tags">';
       for (var t = 0; t < tags.length; t++) tagsHtml += '<span class="te-tag">' + esc(tags[t].replace(/_/g, ' ')) + '</span>';
       tagsHtml += '</div>';
     }
-    var msgData = cfg.messageTemplate ? cfg.messageTemplate.replace('{title}', title).replace('{score}', (score*100).toFixed(0)+'%').replace('{desc}', desc) : '';
-    var msgAttr = msgData ? ' data-send-message="' + escAttr(msgData) + '"' : '';
-    html += '<div class="te-info-card ' + lv + '"' + msgAttr + ' style="cursor:pointer">' +
-      '<div class="te-card-name">' + esc(title) + '</div>' +
-      '<span class="te-card-badge ' + lv + '">' + (score * 100).toFixed(0) + '%</span>' +
+    var detailHtml = '';
+    if (cfg.detailFields) {
+      detailHtml = '<div class="te-card-detail">' + renderCardDetail(item, cfg.detailFields);
+      if (cfg.messageTemplate) {
+        var msgData = interpolateTemplate(cfg.messageTemplate, item, title, score, desc);
+        detailHtml += '<button class="te-card-ai-btn" data-send-message="' + escAttr(msgData) + '">Ask AI to analyze</button>';
+      }
+      detailHtml += '</div>';
+    }
+    var clickAction = '';
+    if (cfg.detailFields) {
+      clickAction = ' data-card-expand="true"';
+    } else if (cfg.messageTemplate) {
+      var msgFallback = interpolateTemplate(cfg.messageTemplate, item, title, score, desc);
+      clickAction = ' data-send-message="' + escAttr(msgFallback) + '"';
+    }
+    var tierClass = tier ? ' ' + tier : '';
+    var badgeHtml = '';
+    if (tier) {
+      badgeHtml = '<span class="te-card-badge ' + tier + '">' + esc(tier.toUpperCase()) + '</span>';
+    } else if (cfg.scoreKey) {
+      badgeHtml = '<span class="te-card-badge">' + (score * 100).toFixed(0) + '%</span>';
+    }
+    html += '<div class="te-info-card' + tierClass + '"' + clickAction + ' style="cursor:pointer">' +
+      '<div class="te-card-header"><div class="te-card-name">' + esc(title) + '</div>' +
+      badgeHtml + '</div>' +
       '<div class="te-card-desc">' + esc(desc) + '</div>' +
-      tagsHtml + '</div>';
+      tagsHtml + detailHtml + '</div>';
   }
   html += '</div>';
+  return html;
+}
+
+function renderCardDetail(item, fields) {
+  var html = '';
+  for (var i = 0; i < fields.length; i++) {
+    var f = fields[i];
+    var value = resolveKey(item, f.key);
+    if (value === null || value === undefined) continue;
+    if (Array.isArray(value)) {
+      if (!value.length) continue;
+      if (f.type === 'tags') {
+        html += '<div class="te-card-detail-row"><span class="te-card-detail-label">' + esc(f.label) + '</span>' +
+          '<div class="te-card-detail-tags">';
+        for (var t = 0; t < value.length; t++) html += '<span class="te-tag">' + esc(String(value[t]).replace(/_/g, ' ')) + '</span>';
+        html += '</div></div>';
+      } else if (f.type === 'list') {
+        html += '<div class="te-card-detail-row"><span class="te-card-detail-label">' + esc(f.label) + '</span>' +
+          '<div class="te-card-detail-list">';
+        for (var li = 0; li < value.length; li++) html += '<div class="te-card-detail-list-item">' + esc(String(value[li])) + '</div>';
+        html += '</div></div>';
+      } else {
+        html += '<div class="te-card-detail-row"><span class="te-card-detail-label">' + esc(f.label) + '</span>' +
+          '<span class="te-card-detail-value">' + esc(value.join(', ')) + '</span></div>';
+      }
+    } else if (typeof value === 'object') {
+      var pairs = [];
+      for (var k in value) { if (value[k]) pairs.push(k + ': ' + String(value[k])); }
+      if (!pairs.length) continue;
+      html += '<div class="te-card-detail-row"><span class="te-card-detail-label">' + esc(f.label) + '</span>' +
+        '<span class="te-card-detail-value">' + esc(pairs.join(', ')) + '</span></div>';
+    } else {
+      var display = formatValue(value, f.format);
+      html += '<div class="te-card-detail-row"><span class="te-card-detail-label">' + esc(f.label) + '</span>' +
+        '<span class="te-card-detail-value">' + esc(display) + '</span></div>';
+    }
+  }
   return html;
 }
 
@@ -943,7 +1048,7 @@ function wireToolbar() {
         args.series_a = cached.series[0].series_id; args.series_b = cached.series[1].series_id;
       }
     }
-    callTool(tab.tool, args).then(function(result) { if (eS.activeTab !== tabId) return; var data = extractData(result); if (data) { eS.tabData[tabId] = data; renderTabContent(tabId, data); } })
+    callTool(tab.tool, args).then(function(result) { if (eS.activeTab !== tabId) return; var data = extractData(result); if (data) { if (typeof window.__checkGate==='function'&&window.__checkGate(data)) return; eS.tabData[tabId] = data; renderTabContent(tabId, data); } })
       .catch(function(err) { showError(err.message); }).finally(function() { var b2 = document.querySelectorAll('.te-period-btn'); for (var j = 0; j < b2.length; j++) b2[j].disabled = false; });
   });
 }
@@ -962,7 +1067,10 @@ function refreshCurrentTab() {
   return callTool(tab.tool, args).then(function(result) {
     if (eS.activeTab !== tabId) return;
     var data = extractData(result);
-    if (data) { eS.tabData[tabId] = data; renderTabContent(tabId, data); }
+    if (data) {
+      if (typeof window.__checkGate === 'function' && window.__checkGate(data)) return;
+      eS.tabData[tabId] = data; renderTabContent(tabId, data);
+    }
   }).catch(function(err) { showError(err.message); });
 }
 
@@ -973,6 +1081,14 @@ function bootstrap() {
   renderDashboard = function(data) {
     onInitialData(data);
   };
+  if (window.__QUEUED_DATA__) {
+    var queued = window.__QUEUED_DATA__;
+    delete window.__QUEUED_DATA__;
+    renderDashboard(queued);
+  } else {
+    buildUI();
+    switchTab(TABS[0].id);
+  }
 }
 
 if (document.readyState === 'loading') {

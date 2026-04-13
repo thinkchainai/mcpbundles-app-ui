@@ -1,9 +1,16 @@
+var renderDashboard = function(data) {
+  console.log('[Dashboard] renderDashboard called before engine loaded, queuing data');
+  window.__QUEUED_DATA__ = data;
+};
+
 const state = {
   data: null,
   mcpInitialized: false,
   nextRequestId: 1,
   toolName: null,
-  lastToolInput: null
+  lastToolInput: null,
+  displayMode: 'inline',
+  availableDisplayModes: []
 };
 const pendingRequests = new Map();
 
@@ -43,6 +50,12 @@ function initializeMCP() {
     if (result.hostContext?.toolInfo?.tool?.name) {
       state.toolName = result.hostContext.toolInfo.tool.name;
       console.log('[Dashboard] Tool name:', state.toolName);
+    }
+    if (result.hostContext?.displayMode) {
+      state.displayMode = result.hostContext.displayMode;
+    }
+    if (result.hostContext?.availableDisplayModes) {
+      state.availableDisplayModes = result.hostContext.availableDisplayModes;
     }
 
     window.parent.postMessage({
@@ -100,6 +113,35 @@ async function sendMessage(text, role = 'user') {
       }
     }, 30000);
   });
+}
+
+async function requestDisplayMode(mode) {
+  if (!state.mcpInitialized) return;
+  if (!state.availableDisplayModes.includes(mode)) return;
+  if (state.displayMode === mode) return;
+  var id = state.nextRequestId++;
+  return new Promise(function(resolve, reject) {
+    pendingRequests.set(id, function(result) {
+      if (result && result.mode) state.displayMode = result.mode;
+      resolve(result);
+    });
+    window.parent.postMessage({
+      jsonrpc: '2.0',
+      id: id,
+      method: 'ui/requestDisplayMode',
+      params: { mode: mode }
+    }, '*');
+    setTimeout(function() {
+      if (pendingRequests.has(id)) {
+        pendingRequests.delete(id);
+        resolve({ mode: state.displayMode });
+      }
+    }, 5000);
+  });
+}
+
+function canGoFullscreen() {
+  return state.availableDisplayModes.includes('fullscreen') && state.displayMode !== 'fullscreen';
 }
 
 async function askAI(question, context = null) {
@@ -250,6 +292,11 @@ window.addEventListener('message', (event) => {
     return;
   }
 
+  if (msg.method === 'ui/notifications/host-context-changed') {
+    if (msg.params?.displayMode) state.displayMode = msg.params.displayMode;
+    if (msg.params?.availableDisplayModes) state.availableDisplayModes = msg.params.availableDisplayModes;
+  }
+
   if (msg.method === 'ui/notifications/tool-input') {
     state.lastToolInput = (msg.params && msg.params.arguments) || (msg.params && msg.params.input) || msg.params || null;
   }
@@ -257,6 +304,7 @@ window.addEventListener('message', (event) => {
   if (msg.method === 'ui/notifications/tool-result') {
     const data = extractData(msg.params);
     if (data) {
+      if (typeof window.__checkGate === 'function' && window.__checkGate(data)) return;
       state.data = data;
       renderDashboard(data);
     }
@@ -275,6 +323,21 @@ function showLoading(container, message = 'Loading...', overlay = false) {
   const el = typeof container === 'string' ? document.querySelector(container) : container;
   if (!el) return;
 
+  const skeletonHtml = `
+    <div class="loading-placeholder">
+      <div style="width:100%;display:flex;flex-direction:column;gap:10px;padding:0 4px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div class="skeleton-block" style="height:56px;border-radius:8px;"></div>
+          <div class="skeleton-block" style="height:56px;border-radius:8px;"></div>
+        </div>
+        <div class="skeleton-block" style="height:14px;border-radius:4px;width:100%;"></div>
+        <div class="skeleton-block" style="height:14px;border-radius:4px;width:65%;"></div>
+        <div class="skeleton-block" style="height:14px;border-radius:4px;width:40%;"></div>
+      </div>
+      <span style="color:var(--text-muted);font-size:0.875rem;">${message}</span>
+    </div>
+  `;
+
   if (overlay) {
     let overlayEl = el.querySelector('.loading-overlay');
     if (!overlayEl) {
@@ -282,18 +345,10 @@ function showLoading(container, message = 'Loading...', overlay = false) {
       overlayEl.className = 'loading-overlay';
       el.appendChild(overlayEl);
     }
-    overlayEl.innerHTML = `
-      <div class="loading-spinner large"></div>
-      <span style="color: var(--text-muted); font-size: 0.875rem;">${message}</span>
-    `;
+    overlayEl.innerHTML = skeletonHtml;
     overlayEl.style.display = 'flex';
   } else {
-    el.innerHTML = `
-      <div class="loading-placeholder">
-        <div class="loading-spinner large"></div>
-        <span>${message}</span>
-      </div>
-    `;
+    el.innerHTML = skeletonHtml;
   }
 }
 
@@ -336,12 +391,12 @@ async function paginateAll(toolName, baseArgs, options = {}) {
 
     const result = await callTool(toolName, args);
     const data = parseToolResult(result);
-    const items = data?.data?.data || [];
+    const items = data?.data || [];
 
     if (items.length === 0) break;
     allItems = allItems.concat(items);
 
-    const nextUrl = data?.data?.pagination?.nextUrl;
+    const nextUrl = data?.pagination?.nextUrl;
     if (!nextUrl) break;
 
     const urlParams = new URLSearchParams(nextUrl.split('?')[1] || '');
@@ -456,11 +511,7 @@ function popBreadcrumb() {
 setTimeout(initBreadcrumbs, 0);
 
 function parseToolResult(result) {
-  if (result.structuredContent) return result.structuredContent;
-  if (result.content?.[0]?.text) {
-    try { return JSON.parse(result.content[0].text); } catch {}
-  }
-  return null;
+  return extractData(result);
 }
 
 var _lastW = 0, _lastH = 0;

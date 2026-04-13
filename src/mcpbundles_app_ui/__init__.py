@@ -38,6 +38,7 @@ from .components import (
     DistributionChart,
     ErrorBanner,
     FunnelChart,
+    Gate,
     Grid,
     ListPicker,
     LoadingState,
@@ -77,6 +78,8 @@ __all__ = [
     "RecentList",
     "BarList",
     "StageList",
+    # Gates
+    "Gate",
     # Special
     "ErrorBanner",
     "RefreshButton",

@@ -7,7 +7,54 @@ resolved at runtime in the browser when data arrives via MCP.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, Union
+from typing import Any, Optional, Union
+
+
+# =============================================================================
+# GATE (usage / billing / auth overlays)
+# =============================================================================
+
+
+@dataclass
+class Gate:
+    """
+    Declarative gate overlay triggered by a tool response ``status`` field.
+
+    When a tool result contains ``{"status": "<gate_status>", ...}``, the
+    App UI renders a frosted overlay with the configured message and CTA
+    instead of passing the data to the dashboard.
+
+    Works in every MCP host (ChatGPT, Claude Desktop, our /try page, etc.)
+    because it lives inside the App iframe — the only layer always present.
+
+    Args:
+        status: Status string to match (e.g. ``"free_limit_reached"``).
+        title: Overlay heading.
+        message: Body text. Supports ``{key}`` placeholders resolved from
+            the tool response (e.g. ``{query_limit}``).
+        cta_label: Call-to-action button label.
+        url_key: Key in the tool response JSON that contains the CTA URL
+            (default ``"signup_url"``). Falls back to ``action_url``.
+        icon: Optional icon name (``"lock"`` | ``"sparkles"`` | ``"alert"``).
+            Default ``"lock"``.
+    """
+
+    status: str
+    title: str
+    message: str
+    cta_label: str
+    url_key: str = "signup_url"
+    icon: str = "lock"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "title": self.title,
+            "message": self.message,
+            "ctaLabel": self.cta_label,
+            "urlKey": self.url_key,
+            "icon": self.icon,
+        }
 
 
 # =============================================================================

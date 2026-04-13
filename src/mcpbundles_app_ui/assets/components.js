@@ -2,7 +2,7 @@ function getNestedValue(obj, path) {
   return path.split('.').reduce((o, k) => o?.[k], obj);
 }
 
-function renderDashboard(data) {
+renderDashboard = function(data) {
   console.log('[Dashboard] Rendering with data:', data);
   if (!data || data.error) {
     if (data?.error) showError(data.error);
@@ -68,6 +68,11 @@ function renderDashboard(data) {
     const funnelData = getNestedValue(data, bind);
     if (funnelData) renderStageList(el, funnelData);
   });
+};
+if (window.__QUEUED_DATA__) {
+  var _q = window.__QUEUED_DATA__;
+  delete window.__QUEUED_DATA__;
+  renderDashboard(_q);
 }
 
 function renderBarChart(container, data) {

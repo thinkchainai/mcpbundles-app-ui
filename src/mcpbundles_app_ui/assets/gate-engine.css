@@ -1,0 +1,101 @@
+/* Gate overlay — frosted glass overlay triggered by gate status in tool responses */
+
+.gate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(12px) saturate(120%);
+  -webkit-backdrop-filter: blur(12px) saturate(120%);
+  animation: gateIn 0.35s ease-out;
+}
+
+@keyframes gateIn {
+  from { opacity: 0; backdrop-filter: blur(0); }
+  to   { opacity: 1; backdrop-filter: blur(12px) saturate(120%); }
+}
+
+.gate-card {
+  background: var(--bg-card, #fff);
+  border: 1px solid var(--border, rgba(0,0,0,0.08));
+  border-radius: 16px;
+  padding: 40px 36px 32px;
+  max-width: 420px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+  animation: gateCardIn 0.4s ease-out 0.1s both;
+}
+
+@keyframes gateCardIn {
+  from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.gate-icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--accent, #f97316);
+  color: #fff;
+}
+
+.gate-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.gate-title {
+  font-family: var(--font-display, var(--font-family, system-ui));
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary, #111);
+  margin-bottom: 8px;
+  letter-spacing: -0.015em;
+}
+
+.gate-message {
+  font-size: 0.925rem;
+  line-height: 1.55;
+  color: var(--text-secondary, #555);
+  margin-bottom: 24px;
+}
+
+.gate-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 28px;
+  background: var(--accent, #f97316);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.95rem;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s ease, transform 0.1s ease;
+  letter-spacing: -0.01em;
+}
+
+.gate-cta:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.gate-cta:active {
+  transform: translateY(0);
+}
+
+.gate-cta svg {
+  width: 16px;
+  height: 16px;
+}

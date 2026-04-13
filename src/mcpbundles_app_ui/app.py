@@ -5,6 +5,7 @@ Base App class for declarative MCP App UI definitions.
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Optional, Union
 
+from .components import Gate
 from .renderer import AppRenderer
 
 if TYPE_CHECKING:
@@ -22,6 +23,7 @@ class App:
         - layout: List of components to render
         - custom_head: CSS/HTML as a string or Path to a file
         - custom_scripts: JavaScript as a string or Path to a file
+        - gates: List of Gate overlays keyed by tool-response ``status``
 
     Chart-engine apps (single tool, control-driven):
         - tool_name: MCP tool to call (e.g. "stock_app")
@@ -58,6 +60,8 @@ class App:
     tool_catalog_intro: ClassVar[Optional[str]] = None
     footer_text: ClassVar[Optional[str]] = None
 
+    gates: ClassVar[Optional[list[Gate]]] = None
+
     def __init__(self):
         pass
 
@@ -85,6 +89,12 @@ class App:
                     entry["name"] = slug_map[entry["name"]]
         return config
 
+    def _inject_gates(self, config: dict[str, Any]) -> dict[str, Any]:
+        """Add serialized gate definitions to the config if present."""
+        if self.gates:
+            config["gates"] = [g.to_dict() for g in self.gates]
+        return config
+
     def _get_app_config(
         self, tool_slug_map: Optional[dict[str, str]] = None
     ) -> Optional[dict[str, Any]]:
@@ -108,7 +118,7 @@ class App:
                 config["colors"] = theme.chart_colors
             if tool_slug_map:
                 config = self._apply_slug_map(config, tool_slug_map)
-            return config
+            return self._inject_gates(config)
 
         if self.tool_name and self.controls:
             config = {
@@ -118,7 +128,10 @@ class App:
             }
             if tool_slug_map:
                 config = self._apply_slug_map(config, tool_slug_map)
-            return config
+            return self._inject_gates(config)
+
+        if self.gates:
+            return self._inject_gates({})
 
         return None
 

@@ -70,19 +70,25 @@ class Theme:
   --accent-soft: {accent_soft};
   --accent-medium: {accent_medium};
 
-  /* Backgrounds */
-  --bg-page: {self.bg_page};
-  --bg-card: {self.bg_card};
-  --bg-hover: {self.bg_hover};
+  /* Backgrounds (private — base.css bridges host tokens to --bg-*) */
+  --_bg-page: {self.bg_page};
+  --_bg-card: {self.bg_card};
+  --_bg-hover: {self.bg_hover};
+  --bg-main: {self.bg_page};
 
-  /* Text */
-  --text-primary: {self.text_primary};
-  --text-secondary: {self.text_secondary};
-  --text-muted: {self.text_muted};
+  /* Text (private — base.css bridges host tokens to --text-*) */
+  --_text-primary: {self.text_primary};
+  --_text-secondary: {self.text_secondary};
+  --_text-muted: {self.text_muted};
 
-  /* Borders */
-  --border: {self.border};
+  /* Borders (private — base.css bridges host tokens to --border) */
+  --_border: {self.border};
   --border-focus: {self.border_focus};
+
+  /* Typography (private — base.css bridges host --font-sans to --font-family) */
+  --_font-family: {self.font_family};
+  --font-mono: {self.font_family_mono};
+  --font-display: {self.font_family};
 
   /* Status */
   --success: {self.success};
@@ -97,10 +103,6 @@ class Theme:
   --chart-5: {self.chart_colors[4] if len(self.chart_colors) > 4 else self.accent};
   --chart-6: {self.chart_colors[5] if len(self.chart_colors) > 5 else self.accent};
 
-  /* Typography */
-  --font-family: {self.font_family};
-  --font-mono: {self.font_family_mono};
-
   /* Shadows */
   --shadow-sm: {self.shadow_sm};
   --shadow-md: {self.shadow_md};
@@ -110,6 +112,7 @@ class Theme:
   --radius-sm: {self.radius_sm};
   --radius-md: {self.radius_md};
   --radius-lg: {self.radius_lg};
+  --radius: {self.radius_md};
 }}
 """
 

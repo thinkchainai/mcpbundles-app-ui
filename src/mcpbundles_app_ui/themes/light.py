@@ -69,23 +69,24 @@ class LightTheme(Theme):
   --accent-soft: {accent_soft};
   --accent-medium: {accent_medium};
 
-  /* Backgrounds */
-  --bg-page: {self.bg_page};
-  --bg-card: {self.bg_card};
-  --bg-hover: {self.bg_hover};
+  /* Backgrounds (private — base.css bridges host tokens to --bg-*) */
+  --_bg-page: {self.bg_page};
+  --_bg-card: {self.bg_card};
+  --_bg-hover: {self.bg_hover};
+  --bg-main: {self.bg_page};
   --background: {self.bg_page};
   --card: {self.bg_card};
   --muted: {self.bg_hover};
 
-  /* Text */
-  --text-primary: {self.text_primary};
-  --text-secondary: {self.text_secondary};
-  --text-muted: {self.text_muted};
+  /* Text (private — base.css bridges host tokens to --text-*) */
+  --_text-primary: {self.text_primary};
+  --_text-secondary: {self.text_secondary};
+  --_text-muted: {self.text_muted};
   --foreground: {self.text_primary};
   --muted-foreground: {self.text_muted};
 
-  /* Borders */
-  --border: {self.border};
+  /* Borders (private — base.css bridges host tokens to --border) */
+  --_border: {self.border};
   --border-focus: {self.border_focus};
   --input: {self.border};
 
@@ -103,8 +104,8 @@ class LightTheme(Theme):
   --chart-5: {self.chart_colors[4] if len(self.chart_colors) > 4 else self.accent};
   --chart-6: {self.chart_colors[5] if len(self.chart_colors) > 5 else self.accent};
 
-  /* Typography */
-  --font-family: {self.font_family};
+  /* Typography (private — base.css bridges host --font-sans to --font-family) */
+  --_font-family: {self.font_family};
   --font-display: {font_display};
   --font-mono: {self.font_family_mono};
 
