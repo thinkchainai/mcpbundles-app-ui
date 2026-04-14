@@ -98,7 +98,7 @@ body {
   font-weight: 500;
 }
 
-/* Error banner */
+/* Error banner (legacy — auto-dismiss toast at top) */
 .error-banner {
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.2);
@@ -110,6 +110,80 @@ body {
   font-size: 0.875rem;
 }
 .error-banner.visible { display: block; }
+
+/* Persistent error state — replaces content area on failure */
+.app-error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px 24px;
+  text-align: center;
+  min-height: 160px;
+}
+.app-error-icon {
+  width: 40px;
+  height: 40px;
+  color: var(--error, #ef4444);
+  opacity: 0.7;
+}
+.app-error-icon.warning {
+  color: var(--warning, #f59e0b);
+}
+.app-error-icon.info {
+  color: var(--text-muted);
+}
+.app-error-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+.app-error-message {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  max-width: 360px;
+  line-height: 1.5;
+}
+.app-error-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+.app-error-btn {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  padding: 8px 18px;
+  border-radius: var(--radius);
+  font-family: var(--font-family);
+  font-weight: 500;
+  font-size: 0.8rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+.app-error-btn:hover {
+  background: var(--border);
+}
+.app-error-btn.primary {
+  background: linear-gradient(to right, var(--accent), color-mix(in srgb, var(--accent) 90%, black));
+  color: white;
+  border-color: transparent;
+}
+.app-error-btn.primary:hover {
+  filter: brightness(1.05);
+}
+.app-error-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.app-error-btn .spin {
+  width: 14px;
+  height: 14px;
+}
 
 /* Content */
 .dashboard-content {

@@ -38,6 +38,12 @@ class App:
         - tool_catalog: Tool reference list for the "tools" tab
         - tool_catalog_intro: HTML intro text for the tools tab
         - footer_text: Footer text (e.g. "FRED · BLS · Treasury")
+
+    Card-engine apps (ChatGPT inline-card pattern):
+        - engine: "card" to activate
+        - cards: Dict mapping tool names to card configs
+        - map_defaults: Map center/zoom/tile config
+        - footer_text: Footer text
     """
 
     name: ClassVar[str] = "App"
@@ -59,6 +65,12 @@ class App:
     tool_catalog: ClassVar[Optional[list[dict[str, Any]]]] = None
     tool_catalog_intro: ClassVar[Optional[str]] = None
     footer_text: ClassVar[Optional[str]] = None
+
+    engine: ClassVar[Optional[str]] = None
+    cards: ClassVar[Optional[dict[str, Any]]] = None
+    map_defaults: ClassVar[Optional[dict[str, Any]]] = None
+    color_maps: ClassVar[Optional[dict[str, dict[str, str]]]] = None
+    empty_state: ClassVar[Optional[str]] = None
 
     gates: ClassVar[Optional[list[Gate]]] = None
 
@@ -87,6 +99,10 @@ class App:
             for entry in config["toolCatalog"]:
                 if entry.get("name") and entry["name"] in slug_map:
                     entry["name"] = slug_map[entry["name"]]
+        if "welcome" in config and "actions" in config["welcome"]:
+            for action in config["welcome"]["actions"]:
+                if action.get("tool") and action["tool"] in slug_map:
+                    action["tool"] = slug_map[action["tool"]]
         return config
 
     def _inject_gates(self, config: dict[str, Any]) -> dict[str, Any]:
@@ -98,7 +114,24 @@ class App:
     def _get_app_config(
         self, tool_slug_map: Optional[dict[str, str]] = None
     ) -> Optional[dict[str, Any]]:
-        """Build app config for chart-engine or tabbed-engine apps."""
+        """Build app config for chart-engine, tabbed-engine, or card-engine apps."""
+        if self.engine == "card" and self.cards:
+            config: dict[str, Any] = {
+                "engine": "card",
+                "cards": {k: dict(v) for k, v in self.cards.items()},
+            }
+            if self.map_defaults:
+                config["mapDefaults"] = dict(self.map_defaults)
+            if self.footer_text:
+                config["footerText"] = self.footer_text
+            if self.color_maps:
+                config["colorMaps"] = {k: dict(v) for k, v in self.color_maps.items()}
+            if self.empty_state:
+                config["emptyState"] = self.empty_state
+            if tool_slug_map:
+                config["slugMap"] = dict(tool_slug_map)
+            return self._inject_gates(config)
+
         if self.tabs:
             config: dict[str, Any] = {"tabs": [dict(t) for t in self.tabs]}
             if self.tool_name:

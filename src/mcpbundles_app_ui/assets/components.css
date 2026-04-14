@@ -345,14 +345,14 @@
   background: var(--accent-soft);
 }
 .section-btn-primary {
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  color: white;
-  border: none;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
 }
 .section-btn-primary:hover {
-  opacity: 0.9;
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  color: white;
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 /* Header actions */
@@ -394,12 +394,12 @@
   cursor: wait;
 }
 .header-action-btn-primary {
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  color: white;
-  border: none;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
 }
 .header-action-btn-primary:hover {
-  opacity: 0.9;
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  color: white;
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
 }

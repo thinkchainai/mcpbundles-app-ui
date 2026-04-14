@@ -59,13 +59,16 @@ class AppRenderer:
             if app_config
             else ""
         )
-        has_tabs = bool(app_config and "tabs" in app_config)
-        has_chart = bool(app_config and not has_tabs)
+        has_card = bool(app_config and app_config.get("engine") == "card")
+        has_tabs = bool(app_config and "tabs" in app_config and not has_card)
+        has_chart = bool(app_config and not has_tabs and not has_card)
         has_gates = bool(app_config and "gates" in app_config)
         chart_engine_js = _load_asset("chart-engine.js") if has_chart else ""
         chart_engine_css = _load_asset("chart-engine.css") if has_chart else ""
         tabbed_engine_js = _load_asset("tabbed-engine.js") if has_tabs else ""
         tabbed_engine_css = _load_asset("tabbed-engine.css") if has_tabs else ""
+        card_engine_js = _load_asset("card-engine.js") if has_card else ""
+        card_engine_css = _load_asset("card-engine.css") if has_card else ""
         gate_engine_js = _load_asset("gate-engine.js") if has_gates else ""
         gate_engine_css = _load_asset("gate-engine.css") if has_gates else ""
 
@@ -82,6 +85,7 @@ class AppRenderer:
 {_load_asset("components.css")}
 {chart_engine_css}
 {tabbed_engine_css}
+{card_engine_css}
 {gate_engine_css}
   </style>
   {custom_head or ''}
@@ -110,6 +114,7 @@ class AppRenderer:
 {gate_engine_js}
 {chart_engine_js}
 {tabbed_engine_js}
+{card_engine_js}
 {_load_asset("components.js")}
 {custom_scripts or ''}
 

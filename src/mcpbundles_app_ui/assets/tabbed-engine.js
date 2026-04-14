@@ -34,6 +34,13 @@ var DEF_PERIOD = cfg.defaultPeriod || '5y';
 var FOOTER = cfg.footerText || '';
 var COLORS = cfg.colors || ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#ec4899','#14b8a6','#a855f7'];
 
+function _errorOpts(err, target, retryFn) {
+  var c = err._classified || (typeof _classifyError === 'function' ? _classifyError(err.message) : { title: 'Something went wrong', icon: 'error', retriable: true });
+  var opts = { title: c.title, message: err.message, icon: c.icon || 'error', target: target };
+  if (c.retriable && retryFn) { opts.retry = retryFn; }
+  return opts;
+}
+
 var TAB_MAP = {};
 var TOOL_TO_TAB = {};
 for (var i = 0; i < TABS.length; i++) {
@@ -224,16 +231,57 @@ function buildUI() {
   tabBar.id = 'teTabBar';
   tabBarWrap.appendChild(tabBar);
 
+  var actionGroup = document.createElement('div');
+  actionGroup.className = 'te-tab-actions';
+
+  var refreshBtn = document.createElement('button');
+  refreshBtn.className = 'te-action-btn';
+  refreshBtn.id = 'teRefreshBtn';
+  refreshBtn.title = 'Refresh';
+  refreshBtn.disabled = true;
+  refreshBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>';
+  refreshBtn.addEventListener('click', function() {
+    refreshCurrentTab();
+  });
+  actionGroup.appendChild(refreshBtn);
+
+  var aiBtn = document.createElement('button');
+  aiBtn.className = 'te-action-btn';
+  aiBtn.id = 'teAskAIBtn';
+  aiBtn.title = 'Ask AI';
+  aiBtn.disabled = true;
+  aiBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+  aiBtn.addEventListener('click', async function() {
+    var tabId = eS.activeTab;
+    if (!tabId) return;
+    var data = eS.tabData[tabId];
+    var tab = TAB_MAP[tabId];
+    if (!data || !tab) return;
+    var label = data.title || tab.label || '';
+    var toolSlug = tab.tool || '';
+    var prompt = 'Analyze the ' + label + ' data currently on screen.';
+    if (toolSlug) prompt += ' The data came from tool "' + toolSlug + '".';
+    prompt += ' Give key takeaways and actionable insights.';
+    var origHTML = aiBtn.innerHTML;
+    aiBtn.disabled = true;
+    aiBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin"><circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12"/></svg>';
+    try { await askAI(prompt); } finally { aiBtn.disabled = false; aiBtn.innerHTML = origHTML; }
+  });
+  actionGroup.appendChild(aiBtn);
+
   if (canGoFullscreen()) {
     var fsBtn = document.createElement('button');
-    fsBtn.className = 'te-fullscreen-btn';
+    fsBtn.id = 'mcpFullscreenBtn';
+    fsBtn.className = 'te-action-btn';
     fsBtn.title = 'Expand to panel';
     fsBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>';
     fsBtn.addEventListener('click', function() {
       requestDisplayMode('fullscreen');
     });
-    tabBarWrap.appendChild(fsBtn);
+    actionGroup.appendChild(fsBtn);
   }
+
+  tabBarWrap.appendChild(actionGroup);
 
   root.appendChild(tabBarWrap);
 
@@ -268,6 +316,21 @@ function buildUI() {
     var expandCard = e.target.closest('[data-card-expand]');
     if (expandCard && !e.target.closest('[data-send-message]')) {
       expandCard.classList.toggle('expanded');
+      if (expandCard.classList.contains('expanded') && typeof updateModelContext === 'function') {
+        var cardIdx = parseInt(expandCard.dataset.cardIndex, 10);
+        var tabData = eS.tabData[eS.activeTab];
+        var tab = TAB_MAP[eS.activeTab];
+        if (tab && tabData) {
+          var matches = tabData.matches || tabData.results || [];
+          var card = matches[cardIdx];
+          if (card) {
+            var cardCtx = _buildContextText(tab, tabData);
+            cardCtx += '\n\nUser expanded card #' + (cardIdx + 1) + ':\n';
+            cardCtx += JSON.stringify(card, null, 2).substring(0, 3000);
+            updateModelContext(cardCtx);
+          }
+        }
+      }
       return;
     }
     var el = e.target.closest('[data-navigate-tab]');
@@ -300,8 +363,9 @@ function navigateToTab(targetTabId, value) {
       '<div id="teSectionResult"><div class="te-loading">' +
       '<div class="te-skeleton-row"><div class="skeleton-block te-skeleton-line"></div></div>' +
       '<div class="te-skeleton-row"><div class="skeleton-block te-skeleton-line medium"></div></div>' +
-      '<span>Loading\u2026</span></div></div>';
+      '<span data-loading-since="' + Date.now() + '">Loading\u2026</span></div></div>';
     wireGenericForm(tab);
+    _startLoadingProgress();
     updateHeaderActions(targetTabId);
 
     var args = {};
@@ -312,8 +376,20 @@ function navigateToTab(targetTabId, value) {
         if (typeof window.__checkGate === 'function' && window.__checkGate(d)) return;
         eS.tabData[targetTabId] = d;
         renderSectionResult(tab, d);
+      } else {
+        var errText = (res && res.isError) ? extractErrorText(res) : null;
+        if (errText) {
+          var ci = (typeof _classifyError === 'function') ? _classifyError(errText) : { title: 'Request failed', icon: 'error', retriable: true };
+          var eo = { title: ci.title, message: errText, icon: ci.icon || 'error', target: '#teSectionResult' };
+          if (ci.retriable) eo.retry = function() { navigateToTab(targetTabId, value); };
+          showContentError(eo);
+        } else {
+          showContentError({ title: 'No results returned', message: 'The server did not return any data.', icon: 'info', target: '#teSectionResult', retry: function() { navigateToTab(targetTabId, value); } });
+        }
       }
-    }).catch(function(e) { showError(e.message); });
+    }).catch(function(e) {
+      showContentError(_errorOpts(e, '#teSectionResult', function() { navigateToTab(targetTabId, value); }));
+    });
     return;
   }
 
@@ -369,8 +445,28 @@ function switchTab(tabId) {
     if (data) {
       if (typeof window.__checkGate === 'function' && window.__checkGate(data)) return;
       eS.tabData[tabId] = data; renderTabContent(tabId, data);
-    } else teShowLoading('No data available');
-  }).catch(function(err) { if (eS.activeTab === tabId) showError(err.message); });
+    } else {
+      var errText = (result && result.isError) ? extractErrorText(result) : null;
+      if (errText) {
+        var c = (typeof _classifyError === 'function') ? _classifyError(errText) : { title: 'Request failed', icon: 'error', retriable: true };
+        var opts = { title: c.title, message: errText, icon: c.icon || 'error', target: '#teContent' };
+        if (c.retriable) opts.retry = function() { eS.tabData[tabId] = null; eS.activeTab = null; switchTab(tabId); };
+        showContentError(opts);
+      } else {
+        showContentError({
+          title: 'No data returned',
+          message: 'The server did not return any data for this view.',
+          icon: 'info',
+          target: '#teContent',
+          retry: function() { eS.tabData[tabId] = null; eS.activeTab = null; switchTab(tabId); }
+        });
+      }
+    }
+  }).catch(function(err) {
+    if (eS.activeTab === tabId) {
+      showContentError(_errorOpts(err, '#teContent', function() { eS.tabData[tabId] = null; eS.activeTab = null; switchTab(tabId); }));
+    }
+  });
   updateHeaderActions(tabId);
 }
 
@@ -389,10 +485,10 @@ function matchesTabData(tab, data) {
   return false;
 }
 
-function onInitialData(data) {
-  if (typeof window.__checkGate === 'function' && window.__checkGate(data)) return;
-  buildUI();
-  var tabId = state.toolName ? TOOL_TO_TAB[state.toolName] : null;
+function _resolveTabForData(data) {
+  var forwarded = data && data._forwardedFrom;
+  var tabId = forwarded ? TOOL_TO_TAB[forwarded] : null;
+  if (!tabId) tabId = state.toolName ? TOOL_TO_TAB[state.toolName] : null;
   if (!tabId) {
     for (var i = 0; i < TABS.length; i++) {
       var t = TABS[i];
@@ -402,7 +498,10 @@ function onInitialData(data) {
     }
     if (!tabId) tabId = TABS[0].id;
   }
+  return tabId;
+}
 
+function _applyDataToTab(tabId, data) {
   if (state.lastToolInput && state.lastToolInput.period) eS.tabPeriod[tabId] = state.lastToolInput.period;
   else if (data.period) eS.tabPeriod[tabId] = data.period;
   eS.tabData[tabId] = data; eS.activeTab = tabId; eS.hiddenSeries = {};
@@ -414,6 +513,22 @@ function onInitialData(data) {
   updateHeaderActions(tabId);
 }
 
+var _uiBuilt = false;
+
+function onInitialData(data) {
+  if (typeof window.__checkGate === 'function' && window.__checkGate(data)) return;
+  if (!_uiBuilt) { buildUI(); _uiBuilt = true; }
+  var tabId = _resolveTabForData(data);
+  _applyDataToTab(tabId, data);
+}
+
+function onForwardedToolResult(data) {
+  if (typeof window.__checkGate === 'function' && window.__checkGate(data)) return;
+  if (!_uiBuilt) { buildUI(); _uiBuilt = true; }
+  var tabId = _resolveTabForData(data);
+  _applyDataToTab(tabId, data);
+}
+
 function renderTabContent(tabId, data) {
   var tab = TAB_MAP[tabId];
   if (tab.sections) { renderSections(tabId, data); return; }
@@ -423,17 +538,88 @@ function renderTabContent(tabId, data) {
   else if (tab.type === 'search') renderSearchResults(data);
 }
 
+function _buildContextText(tab, data) {
+  var lines = [];
+  lines.push('---');
+  lines.push('app: ' + (cfg.name || 'Dashboard'));
+  lines.push('tab: ' + (tab.label || tab.id));
+  if (tab.tool) lines.push('tool: ' + tab.tool);
+  if (data.query) lines.push('query: ' + data.query);
+  if (data.query_identifier) lines.push('query_identifier: ' + data.query_identifier);
+  if (typeof data.match_count === 'number') lines.push('match_count: ' + data.match_count);
+  if (typeof data.threshold === 'number') lines.push('threshold: ' + data.threshold);
+  if (data.title) lines.push('title: ' + data.title);
+  if (data.summary) lines.push('summary: ' + data.summary);
+  lines.push('---');
+  lines.push('');
+  if (data.matches && Array.isArray(data.matches)) {
+    var top = data.matches.slice(0, 5);
+    lines.push('Top matches:');
+    for (var i = 0; i < top.length; i++) {
+      var m = top[i];
+      var parts = [];
+      if (m.primary_name || m.name) parts.push(m.primary_name || m.name);
+      if (typeof m.score === 'number') parts.push('score: ' + m.score.toFixed(2));
+      if (m.source_code) parts.push(m.source_code);
+      if (m.entity_type) parts.push(m.entity_type);
+      if (m.country) parts.push(m.country);
+      lines.push('- ' + parts.join(' | '));
+    }
+    if (data.matches.length > 5) lines.push('... and ' + (data.matches.length - 5) + ' more');
+  }
+  if (data.results && Array.isArray(data.results)) {
+    lines.push('Results: ' + data.results.length + ' items');
+    for (var j = 0; j < Math.min(data.results.length, 5); j++) {
+      var r = data.results[j];
+      lines.push('- ' + (r.title || r.name || r.primary_name || JSON.stringify(r).substring(0, 120)));
+    }
+  }
+  return lines.join('\n');
+}
+
+function _pushContext(tabId, data) {
+  if (typeof updateModelContext !== 'function') return;
+  var tab = TAB_MAP[tabId];
+  if (!tab || !data) return;
+  updateModelContext(_buildContextText(tab, data));
+}
+
 function updateHeaderActions(tabId) {
   var data = eS.tabData[tabId];
   var tab = TAB_MAP[tabId];
-  if (tab.type === 'tools' || !data) { clearHeaderActions(); return; }
-  addViewActions(
-    function() {
-      var ctx = (data.title || tab.label) + '\n' + (data.summary || '');
-      return { question: 'Analyze this data. Key takeaways?', context: ctx };
-    },
-    function() { return refreshCurrentTab(); }
-  );
+  var hasData = tab.type !== 'tools' && !!data;
+  var rb = document.getElementById('teRefreshBtn');
+  var ab = document.getElementById('teAskAIBtn');
+  if (rb) rb.disabled = !hasData;
+  if (ab) ab.disabled = !hasData;
+  if (hasData) _pushContext(tabId, data);
+  clearHeaderActions();
+}
+
+var _loadingTimer = null;
+var _PROGRESS_STAGES = [
+  { at: 5, text: 'Still working\u2026' },
+  { at: 15, text: 'Taking longer than usual\u2026' },
+  { at: 30, text: 'Still trying \u2014 hang tight\u2026' },
+  { at: 50, text: 'Almost there\u2026' }
+];
+
+function _startLoadingProgress() {
+  if (_loadingTimer) return;
+  _loadingTimer = setInterval(function() {
+    var els = document.querySelectorAll('[data-loading-since]');
+    if (!els.length) { clearInterval(_loadingTimer); _loadingTimer = null; return; }
+    var now = Date.now();
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      var elapsed = (now - parseInt(el.getAttribute('data-loading-since'), 10)) / 1000;
+      var label = null;
+      for (var j = _PROGRESS_STAGES.length - 1; j >= 0; j--) {
+        if (elapsed >= _PROGRESS_STAGES[j].at) { label = _PROGRESS_STAGES[j].text; break; }
+      }
+      if (label && el.textContent !== label) el.textContent = label;
+    }
+  }, 2000);
 }
 
 function teShowLoading(t) {
@@ -443,7 +629,8 @@ function teShowLoading(t) {
     '<div class="te-skeleton-row"><div class="skeleton-block te-skeleton-line"></div></div>' +
     '<div class="te-skeleton-row"><div class="skeleton-block te-skeleton-line medium"></div></div>' +
     '<div class="te-skeleton-row"><div class="skeleton-block te-skeleton-line short"></div></div>' +
-    '<span>' + esc(t) + '</span></div>';
+    '<span data-loading-since="' + Date.now() + '">' + esc(t) + '</span></div>';
+  _startLoadingProgress();
 }
 function renderPromptView(title, hint) { document.getElementById('teContent').innerHTML = '<div class="te-prompt"><span class="te-prompt-text">' + esc(title) + '</span><span class="te-prompt-hint">' + esc(hint) + '</span></div>'; }
 
@@ -490,12 +677,26 @@ function wireSearch() {
   var searchTab = null;
   for (var i = 0; i < TABS.length; i++) { if (TABS[i].type === 'search') { searchTab = TABS[i]; break; } }
   if (!searchTab) return;
-  function go() { var q = inp.value.trim(); if(!q)return; btn.disabled=true; btn.textContent='Searching...';
+  function go() {
+    var q = inp.value.trim(); if(!q)return; btn.disabled=true; btn.textContent='Searching...';
     var args = {};
     var queryParam = searchTab.searchQueryParam || 'query';
     var limitParam = searchTab.searchLimitParam || 'limit';
     args[queryParam] = q; args[limitParam] = 20;
-    callTool(searchTab.tool,args).then(function(res){var d=extractData(res);if(d){if(typeof window.__checkGate==='function'&&window.__checkGate(d))return;eS.tabData[searchTab.id]=d;showSearchItems(d);}}).catch(function(e){showError(e.message);}).finally(function(){btn.disabled=false;btn.textContent='Search';}); }
+    callTool(searchTab.tool, args).then(function(res) {
+      var d = extractData(res);
+      if (d) {
+        if (typeof window.__checkGate === 'function' && window.__checkGate(d)) return;
+        eS.tabData[searchTab.id] = d;
+        showSearchItems(d);
+        updateHeaderActions(searchTab.id);
+      } else {
+        showContentError({ title: 'No results', message: 'The server returned an empty response.', icon: 'info', target: '#teSr', retry: go });
+      }
+    }).catch(function(e) {
+      showContentError(_errorOpts(e, '#teSr', go));
+    }).finally(function() { btn.disabled = false; btn.textContent = 'Search'; });
+  }
   btn.addEventListener('click', go); inp.addEventListener('keydown', function(e){if(e.key==='Enter')go();});
 }
 
@@ -596,16 +797,36 @@ function wireGenericForm(tab) {
     if (resultEl) resultEl.innerHTML = '<div class="te-loading">' +
       '<div class="te-skeleton-row"><div class="skeleton-block te-skeleton-line"></div></div>' +
       '<div class="te-skeleton-row"><div class="skeleton-block te-skeleton-line medium"></div></div>' +
-      '<span>' + esc(loadText) + '</span></div>';
+      '<span data-loading-since="' + Date.now() + '">' + esc(loadText) + '</span></div>';
+    _startLoadingProgress();
     var args = {};
     args[form.queryParam] = q;
+    console.log('[TE-DEBUG] wireGenericForm calling tool:', tab.tool, 'args:', JSON.stringify(args));
     callTool(tab.tool, args).then(function(res) {
+      console.log('[TE-DEBUG] wireGenericForm result received, isError=' + (res && res.isError));
       var d = extractData(res);
+      console.log('[TE-DEBUG] wireGenericForm extractData returned:', d ? ('keys=' + Object.keys(d).join(',')) : 'NULL');
       if (d) {
-        if (typeof window.__checkGate === 'function' && window.__checkGate(d)) return;
+        var gateResult = typeof window.__checkGate === 'function' ? window.__checkGate(d) : false;
+        console.log('[TE-DEBUG] wireGenericForm checkGate=' + gateResult + ' data.status=' + (d.status || 'none'));
+        if (gateResult) return;
         eS.tabData[tab.id] = d; renderSectionResult(tab, d);
+        updateHeaderActions(tab.id);
+      } else {
+        var errText = (res && res.isError) ? extractErrorText(res) : null;
+        if (errText) {
+          var ci = (typeof _classifyError === 'function') ? _classifyError(errText) : { title: 'Request failed', icon: 'error', retriable: true };
+          var eo = { title: ci.title, message: errText, icon: ci.icon || 'error', target: '#teSectionResult' };
+          if (ci.retriable) eo.retry = go;
+          showContentError(eo);
+        } else {
+          showContentError({ title: 'No results returned', message: 'The server did not return any data. Try again or adjust your query.', icon: 'info', target: '#teSectionResult', retry: go });
+        }
       }
-    }).catch(function(e) { showError(e.message); })
+    }).catch(function(e) {
+      console.log('[TE-DEBUG] wireGenericForm CATCH:', e.message);
+      showContentError(_errorOpts(e, '#teSectionResult', go));
+    })
     .finally(function() { btn.disabled = false; btn.textContent = form.buttonText || 'Submit'; });
   }
   btn.addEventListener('click', go);
@@ -906,7 +1127,7 @@ function secCardGrid(data, cfg) {
     } else if (cfg.scoreKey) {
       badgeHtml = '<span class="te-card-badge">' + (score * 100).toFixed(0) + '%</span>';
     }
-    html += '<div class="te-info-card' + tierClass + '"' + clickAction + ' style="cursor:pointer">' +
+    html += '<div class="te-info-card' + tierClass + '"' + clickAction + ' data-card-index="' + i + '" style="cursor:pointer">' +
       '<div class="te-card-header"><div class="te-card-name">' + esc(title) + '</div>' +
       badgeHtml + '</div>' +
       '<div class="te-card-desc">' + esc(desc) + '</div>' +
@@ -1048,8 +1269,18 @@ function wireToolbar() {
         args.series_a = cached.series[0].series_id; args.series_b = cached.series[1].series_id;
       }
     }
-    callTool(tab.tool, args).then(function(result) { if (eS.activeTab !== tabId) return; var data = extractData(result); if (data) { if (typeof window.__checkGate==='function'&&window.__checkGate(data)) return; eS.tabData[tabId] = data; renderTabContent(tabId, data); } })
-      .catch(function(err) { showError(err.message); }).finally(function() { var b2 = document.querySelectorAll('.te-period-btn'); for (var j = 0; j < b2.length; j++) b2[j].disabled = false; });
+    callTool(tab.tool, args).then(function(result) {
+      if (eS.activeTab !== tabId) return;
+      var data = extractData(result);
+      if (data) { if (typeof window.__checkGate==='function'&&window.__checkGate(data)) return; eS.tabData[tabId] = data; renderTabContent(tabId, data); }
+    }).catch(function(err) {
+      if (eS.activeTab === tabId) {
+        showContentError(_errorOpts(err, '#teContent', function() {
+          var b3 = document.querySelectorAll('.te-period-btn');
+          for (var j2 = 0; j2 < b3.length; j2++) { if (b3[j2].dataset.period === args.period) b3[j2].click(); }
+        }));
+      }
+    }).finally(function() { var b2 = document.querySelectorAll('.te-period-btn'); for (var j = 0; j < b2.length; j++) b2[j].disabled = false; });
   });
 }
 
@@ -1061,6 +1292,26 @@ function refreshCurrentTab() {
   if (!tabId || !state.mcpInitialized) return Promise.resolve();
   var tab = TAB_MAP[tabId];
   if (!tab || !tab.tool) return Promise.resolve();
+  if (tab.needsArgs && tab.form) {
+    var inp = document.getElementById('teFormInput');
+    var lastQuery = inp ? inp.value.trim() : '';
+    if (!lastQuery) return Promise.resolve();
+    var args = {};
+    args[tab.form.queryParam] = lastQuery;
+    return callTool(tab.tool, args).then(function(result) {
+      if (eS.activeTab !== tabId) return;
+      var data = extractData(result);
+      if (data) {
+        if (typeof window.__checkGate === 'function' && window.__checkGate(data)) return;
+        eS.tabData[tabId] = data; renderSectionResult(tab, data);
+        updateHeaderActions(tabId);
+      }
+    }).catch(function(err) {
+      if (eS.activeTab === tabId) {
+        showContentError(_errorOpts(err, '#teContent', function() { refreshCurrentTab(); }));
+      }
+    });
+  }
   var args = {};
   if (tab.hasPeriod) args.period = eS.tabPeriod[tabId] || DEF_PERIOD;
   if (tab.defaultArgs) { for (var k in tab.defaultArgs) args[k] = tab.defaultArgs[k]; }
@@ -1070,8 +1321,13 @@ function refreshCurrentTab() {
     if (data) {
       if (typeof window.__checkGate === 'function' && window.__checkGate(data)) return;
       eS.tabData[tabId] = data; renderTabContent(tabId, data);
+      updateHeaderActions(tabId);
     }
-  }).catch(function(err) { showError(err.message); });
+  }).catch(function(err) {
+    if (eS.activeTab === tabId) {
+      showContentError(_errorOpts(err, '#teContent', function() { refreshCurrentTab(); }));
+    }
+  });
 }
 
 // ======================================================================
@@ -1079,7 +1335,11 @@ function refreshCurrentTab() {
 // ======================================================================
 function bootstrap() {
   renderDashboard = function(data) {
-    onInitialData(data);
+    if (data && data._forwardedFrom) {
+      onForwardedToolResult(data);
+    } else {
+      onInitialData(data);
+    }
   };
   if (window.__QUEUED_DATA__) {
     var queued = window.__QUEUED_DATA__;
@@ -1087,6 +1347,7 @@ function bootstrap() {
     renderDashboard(queued);
   } else {
     buildUI();
+    _uiBuilt = true;
     switchTab(TABS[0].id);
   }
 }

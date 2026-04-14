@@ -3,7 +3,6 @@ function getNestedValue(obj, path) {
 }
 
 renderDashboard = function(data) {
-  console.log('[Dashboard] Rendering with data:', data);
   if (!data || data.error) {
     if (data?.error) showError(data.error);
     return;
