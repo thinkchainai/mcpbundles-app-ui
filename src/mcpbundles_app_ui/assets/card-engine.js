@@ -29,6 +29,7 @@
 
 var cfg = window.__APP_CONFIG__ || {};
 if (cfg.engine !== 'card') return;
+window.__engineClaimed = true;
 
 var CARDS = cfg.cards || {};
 var MAP_DEFAULTS = cfg.mapDefaults || {
@@ -657,6 +658,7 @@ async function goFullscreen() {
 // ── Wire up ──
 
 renderDashboard = function(data) {
+  _autoLoadFired = true;
   var toolName = data._source_tool || state.toolName || '';
   if (_isFullscreen && _map) {
     var cardCfg = matchCard(toolName);
@@ -671,16 +673,74 @@ renderDashboard = function(data) {
   renderCard(data);
 };
 
-if (window.__QUEUED_DATA__) {
-  var queued = window.__QUEUED_DATA__; delete window.__QUEUED_DATA__;
-  renderCard(queued);
-} else {
+var AUTO_LOAD_TOOL = cfg.autoLoadTool || null;
+var _autoLoadFired = false;
+
+function _showEmptyState() {
   var content = document.querySelector('.dashboard-content');
   if (content) {
     var desc = cfg.emptyState || 'Ask a question to get started.';
     content.innerHTML = '<div class="ce-empty-state"><p class="ce-empty-state-text">' + esc(desc) + '</p>' +
       (FOOTER ? '<div class="ce-footer">' + esc(FOOTER) + '</div>' : '') + '</div>';
   }
+}
+
+function _waitForMCP(maxMs) {
+  return new Promise(function(resolve) {
+    if (state.mcpInitialized) { resolve(true); return; }
+    var elapsed = 0;
+    var interval = 50;
+    var timer = setInterval(function() {
+      elapsed += interval;
+      if (state.mcpInitialized || _autoLoadFired) {
+        clearInterval(timer);
+        resolve(state.mcpInitialized);
+      } else if (elapsed >= maxMs) {
+        clearInterval(timer);
+        resolve(false);
+      }
+    }, interval);
+  });
+}
+
+var _AUTO_LOAD_GRACE_MS = 600;
+
+async function _autoLoad() {
+  if (_autoLoadFired || !AUTO_LOAD_TOOL) return;
+
+  var ready = await _waitForMCP(15000);
+  if (_autoLoadFired) return;
+  if (!ready) { _showEmptyState(); return; }
+
+  await new Promise(function(r) { setTimeout(r, _AUTO_LOAD_GRACE_MS); });
+  if (_autoLoadFired) return;
+
+  _autoLoadFired = true;
+  var slug = resolveSlug(AUTO_LOAD_TOOL);
+  try {
+    showInlineLoading();
+    var result = await callTool(slug, {});
+    var data = extractData(result);
+    if (data) {
+      data._source_tool = AUTO_LOAD_TOOL;
+      renderCard(data);
+    } else {
+      _showEmptyState();
+    }
+  } catch (e) {
+    _showEmptyState();
+  }
+}
+
+if (window.__QUEUED_DATA__) {
+  var queued = window.__QUEUED_DATA__; delete window.__QUEUED_DATA__;
+  _autoLoadFired = true;
+  renderCard(queued);
+} else if (AUTO_LOAD_TOOL) {
+  showInlineLoading();
+  _autoLoad();
+} else {
+  _showEmptyState();
 }
 
 window.addEventListener('message', function(event) {

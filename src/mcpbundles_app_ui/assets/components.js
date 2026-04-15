@@ -2,6 +2,9 @@ function getNestedValue(obj, path) {
   return path.split('.').reduce((o, k) => o?.[k], obj);
 }
 
+if (window.__engineClaimed) {
+  // An engine (card, map, tabbed) already claimed renderDashboard — skip.
+} else {
 renderDashboard = function(data) {
   if (!data || data.error) {
     if (data?.error) showError(data.error);
@@ -73,6 +76,7 @@ if (window.__QUEUED_DATA__) {
   delete window.__QUEUED_DATA__;
   renderDashboard(_q);
 }
+} // end if (!__engineClaimed)
 
 function renderBarChart(container, data) {
   let entries;

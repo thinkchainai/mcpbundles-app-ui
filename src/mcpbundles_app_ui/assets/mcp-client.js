@@ -160,6 +160,7 @@ function _rawCallTool(name, args) {
     setTimeout(function() {
       if (pendingRequests.has(id)) {
         pendingRequests.delete(id);
+        console.error('[MCP-Client] _rawCallTool TIMED OUT: name=', name, 'id=', id);
         reject(new Error('Request timed out \u2014 the server took too long to respond'));
       }
     }, _TOOL_CALL_TIMEOUT);
@@ -168,21 +169,16 @@ function _rawCallTool(name, args) {
 
 async function callTool(name, args) {
   if (args === undefined) args = {};
-  console.log('[MCP-DEBUG] callTool:', name, JSON.stringify(args));
   if (!state.mcpInitialized) {
-    console.log('[MCP-DEBUG] callTool: NOT INITIALIZED');
     throw new Error('Not connected to server');
   }
 
   var lastError;
   for (var attempt = 0; attempt <= _TOOL_CALL_MAX_RETRIES; attempt++) {
     try {
-      console.log('[MCP-DEBUG] callTool attempt=' + attempt);
       var result = await _rawCallTool(name, args);
-      console.log('[MCP-DEBUG] callTool raw result: isError=' + (result && result.isError) + ' keys=' + (result && typeof result === 'object' ? Object.keys(result).join(',') : typeof result));
       if (result && result.isError) {
         var errMsg = extractErrorText(result) || 'Tool returned an error';
-        console.log('[MCP-DEBUG] callTool isError=true, errMsg=' + errMsg);
         var info = _classifyError(errMsg);
         if (!info.retriable || attempt >= _TOOL_CALL_MAX_RETRIES) {
           var err = new Error(errMsg);
@@ -191,11 +187,9 @@ async function callTool(name, args) {
         }
         lastError = errMsg;
       } else {
-        console.log('[MCP-DEBUG] callTool SUCCESS, returning result');
         return result;
       }
     } catch (e) {
-      console.log('[MCP-DEBUG] callTool CATCH:', e.message);
       var classified = e._classified || _classifyError(e.message);
       if (!classified.retriable || attempt >= _TOOL_CALL_MAX_RETRIES) {
         if (!e._classified) e._classified = classified;
@@ -243,7 +237,7 @@ async function requestDisplayMode(mode) {
     window.parent.postMessage({
       jsonrpc: '2.0',
       id: id,
-      method: 'ui/requestDisplayMode',
+      method: 'ui/request-display-mode',
       params: { mode: mode }
     }, '*');
     setTimeout(function() {
@@ -274,13 +268,17 @@ function _injectFullscreenButton() {
 
 function updateModelContext(text) {
   if (!state.mcpInitialized) return;
+  var id = state.nextRequestId++;
   window.parent.postMessage({
     jsonrpc: '2.0',
+    id: id,
     method: 'ui/update-model-context',
     params: {
       content: [{ type: 'text', text: text }]
     }
   }, '*');
+  pendingRequests.set(id, function() {});
+  setTimeout(function() { pendingRequests.delete(id); }, 5000);
 }
 
 async function askAI(question) {
@@ -412,19 +410,17 @@ function addFloatingAskAIButton(getContext) {
 
 window.addEventListener('message', (event) => {
   const msg = event.data;
-  if (!msg || msg.jsonrpc !== '2.0') return;
+  if (!msg || typeof msg !== 'object' || msg.jsonrpc !== '2.0') return;
 
   if (msg.id && pendingRequests.has(msg.id)) {
     const entry = pendingRequests.get(msg.id);
     pendingRequests.delete(msg.id);
-    console.log('[MCP-DEBUG] postMessage response id=' + msg.id, 'hasResult=' + (msg.result !== undefined), 'hasError=' + !!msg.error, 'entryType=' + (typeof entry === 'function' ? 'fn' : 'resolve/reject'));
     if (msg.result !== undefined) {
-      console.log('[MCP-DEBUG] result keys=' + (msg.result && typeof msg.result === 'object' ? Object.keys(msg.result).join(',') : typeof msg.result), 'isError=' + (msg.result && msg.result.isError));
       if (typeof entry === 'function') entry(msg.result);
       else if (entry.resolve) entry.resolve(msg.result);
     } else if (msg.error) {
       var errMsg = msg.error.message || 'Request failed';
-      console.log('[MCP-DEBUG] JSONRPC error:', errMsg);
+      console.error('[MCP-Client] rejecting pending request id=', msg.id, 'error=', errMsg);
       if (entry.reject) entry.reject(new Error(errMsg));
       else showError(errMsg);
     }
@@ -439,6 +435,11 @@ window.addEventListener('message', (event) => {
   if (msg.method === 'ui/notifications/tool-input') {
     state.lastToolInput = (msg.params && msg.params.arguments) || (msg.params && msg.params.input) || msg.params || null;
     if (msg.params && msg.params.toolName) state.toolName = msg.params.toolName;
+  }
+
+  if (msg.method === 'ui/notifications/tool-cancelled') {
+    hideLoading('.dashboard-content');
+    return;
   }
 
   if (msg.method === 'ui/notifications/tool-result') {
@@ -754,7 +755,6 @@ new ResizeObserver((entries) => {
 async function copyToClipboard(text, successMessage = '\u2713 Copied to clipboard', successSubtitle = '') {
   try {
     await navigator.clipboard.writeText(text);
-    console.log('[Export] Copied to clipboard');
     showToast(successMessage, successSubtitle);
     return true;
   } catch (e) {

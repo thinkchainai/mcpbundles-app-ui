@@ -59,9 +59,10 @@ class AppRenderer:
             if app_config
             else ""
         )
+        has_map = bool(app_config and app_config.get("engine") == "map")
         has_card = bool(app_config and app_config.get("engine") == "card")
-        has_tabs = bool(app_config and "tabs" in app_config and not has_card)
-        has_chart = bool(app_config and not has_tabs and not has_card)
+        has_tabs = bool(app_config and "tabs" in app_config and not has_card and not has_map)
+        has_chart = bool(app_config and not has_tabs and not has_card and not has_map)
         has_gates = bool(app_config and "gates" in app_config)
         chart_engine_js = _load_asset("chart-engine.js") if has_chart else ""
         chart_engine_css = _load_asset("chart-engine.css") if has_chart else ""
@@ -69,6 +70,8 @@ class AppRenderer:
         tabbed_engine_css = _load_asset("tabbed-engine.css") if has_tabs else ""
         card_engine_js = _load_asset("card-engine.js") if has_card else ""
         card_engine_css = _load_asset("card-engine.css") if has_card else ""
+        map_engine_js = _load_asset("map-engine.js") if has_map else ""
+        map_engine_css = _load_asset("map-engine.css") if has_map else ""
         gate_engine_js = _load_asset("gate-engine.js") if has_gates else ""
         gate_engine_css = _load_asset("gate-engine.css") if has_gates else ""
 
@@ -86,11 +89,13 @@ class AppRenderer:
 {chart_engine_css}
 {tabbed_engine_css}
 {card_engine_css}
+{map_engine_css}
 {gate_engine_css}
   </style>
   {custom_head or ''}
 </head>
-<body>
+<body{' class="me-active"' if has_map else ''}>
+  {"<div id='me-map'></div><div id='me-panel' class='me-panel'></div><div id='me-status'></div>" if has_map else ""}
   <div class="dashboard">
     <header class="dashboard-header">
       <nav id="breadcrumb" class="breadcrumb" aria-label="Breadcrumb"></nav>
@@ -115,6 +120,7 @@ class AppRenderer:
 {chart_engine_js}
 {tabbed_engine_js}
 {card_engine_js}
+{map_engine_js}
 {_load_asset("components.js")}
 {custom_scripts or ''}
 

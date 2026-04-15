@@ -26,6 +26,7 @@
 
 var cfg = window.__APP_CONFIG__ || {};
 if (!cfg.tabs || !cfg.tabs.length) return;
+window.__engineClaimed = true;
 
 var TABS = cfg.tabs;
 var TOOL_CATALOG = cfg.toolCatalog || [];
@@ -801,14 +802,10 @@ function wireGenericForm(tab) {
     _startLoadingProgress();
     var args = {};
     args[form.queryParam] = q;
-    console.log('[TE-DEBUG] wireGenericForm calling tool:', tab.tool, 'args:', JSON.stringify(args));
     callTool(tab.tool, args).then(function(res) {
-      console.log('[TE-DEBUG] wireGenericForm result received, isError=' + (res && res.isError));
       var d = extractData(res);
-      console.log('[TE-DEBUG] wireGenericForm extractData returned:', d ? ('keys=' + Object.keys(d).join(',')) : 'NULL');
       if (d) {
         var gateResult = typeof window.__checkGate === 'function' ? window.__checkGate(d) : false;
-        console.log('[TE-DEBUG] wireGenericForm checkGate=' + gateResult + ' data.status=' + (d.status || 'none'));
         if (gateResult) return;
         eS.tabData[tab.id] = d; renderSectionResult(tab, d);
         updateHeaderActions(tab.id);
@@ -824,7 +821,6 @@ function wireGenericForm(tab) {
         }
       }
     }).catch(function(e) {
-      console.log('[TE-DEBUG] wireGenericForm CATCH:', e.message);
       showContentError(_errorOpts(e, '#teSectionResult', go));
     })
     .finally(function() { btn.disabled = false; btn.textContent = form.buttonText || 'Submit'; });

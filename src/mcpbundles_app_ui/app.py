@@ -43,7 +43,16 @@ class App:
         - engine: "card" to activate
         - cards: Dict mapping tool names to card configs
         - map_defaults: Map center/zoom/tile config
+        - auto_load_tool: Canonical tool name to call on iframe open (self-driving)
         - footer_text: Footer text
+
+    Map-engine apps (full-bleed interactive map):
+        - engine: "map" to activate
+        - layers: Dict mapping tool names to layer configs (type, title, etc.)
+        - map_defaults: Map center/zoom/tile config
+        - color_maps: Named color palettes
+        - auto_load_tool: Canonical tool name to call on iframe open
+        - empty_state: Message shown before any data
     """
 
     name: ClassVar[str] = "App"
@@ -68,9 +77,11 @@ class App:
 
     engine: ClassVar[Optional[str]] = None
     cards: ClassVar[Optional[dict[str, Any]]] = None
+    layers: ClassVar[Optional[dict[str, Any]]] = None
     map_defaults: ClassVar[Optional[dict[str, Any]]] = None
     color_maps: ClassVar[Optional[dict[str, dict[str, str]]]] = None
     empty_state: ClassVar[Optional[str]] = None
+    auto_load_tool: ClassVar[Optional[str]] = None
 
     gates: ClassVar[Optional[list[Gate]]] = None
 
@@ -115,6 +126,25 @@ class App:
         self, tool_slug_map: Optional[dict[str, str]] = None
     ) -> Optional[dict[str, Any]]:
         """Build app config for chart-engine, tabbed-engine, or card-engine apps."""
+        if self.engine == "map" and self.layers:
+            config: dict[str, Any] = {
+                "engine": "map",
+                "layers": {k: dict(v) for k, v in self.layers.items()},
+            }
+            if self.map_defaults:
+                config["mapDefaults"] = dict(self.map_defaults)
+            if self.color_maps:
+                config["colorMaps"] = {k: dict(v) for k, v in self.color_maps.items()}
+            if self.empty_state:
+                config["emptyState"] = self.empty_state
+            if self.auto_load_tool:
+                config["autoLoadTool"] = self.auto_load_tool
+            if self.name:
+                config["name"] = self.name
+            if tool_slug_map:
+                config["slugMap"] = dict(tool_slug_map)
+            return self._inject_gates(config)
+
         if self.engine == "card" and self.cards:
             config: dict[str, Any] = {
                 "engine": "card",
@@ -128,6 +158,8 @@ class App:
                 config["colorMaps"] = {k: dict(v) for k, v in self.color_maps.items()}
             if self.empty_state:
                 config["emptyState"] = self.empty_state
+            if self.auto_load_tool:
+                config["autoLoadTool"] = self.auto_load_tool
             if tool_slug_map:
                 config["slugMap"] = dict(tool_slug_map)
             return self._inject_gates(config)
