@@ -1,5 +1,10 @@
 /* ── Map Engine ── */
 
+/* Claude reads documentElement height directly (ignores size-changed).
+   An explicit min-height prevents the circular iframe sizing collapse
+   and requests the 500px max inline card height from the host. */
+.me-active html { min-height: 500px; }
+
 /* Full-bleed map container */
 #me-map {
   position: fixed;

@@ -41,6 +41,9 @@ var _currentData = null;
 var _currentLayerCfg = null;
 var _currentToolName = null;
 var _autoLoadFired = false;
+var _mapReady = null;
+var _resolveMapReady = null;
+_mapReady = new Promise(function(resolve) { _resolveMapReady = resolve; });
 
 function resolveSlug(name) { return SLUG_MAP[name] || name; }
 function esc(t) { if (!t) return ''; var d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
@@ -83,10 +86,24 @@ function ensureLeafletLoaded() {
 }
 
 async function initMap() {
-  await ensureLeafletLoaded();
+  try {
+    await ensureLeafletLoaded();
+  } catch (e) {
+    console.error('[MapEngine] Leaflet failed to load:', e);
+    if (_resolveMapReady) _resolveMapReady();
+    return;
+  }
   var L = window.L;
+  if (!L) {
+    console.error('[MapEngine] Leaflet script loaded but window.L is undefined');
+    if (_resolveMapReady) _resolveMapReady();
+    return;
+  }
   var container = document.getElementById('me-map');
-  if (!container || _map) return;
+  if (!container || _map) {
+    if (_resolveMapReady) _resolveMapReady();
+    return;
+  }
 
   _map = L.map(container, {
     zoomControl: false,
@@ -102,6 +119,7 @@ async function initMap() {
   }).addTo(_map);
 
   _map.setView(MAP_DEFAULTS.center, MAP_DEFAULTS.zoom);
+  if (_resolveMapReady) _resolveMapReady();
 }
 
 function clearLayers() {
@@ -146,7 +164,6 @@ function hideStatusBar() {
 // ── Layer: line-status (tube status overview) ──
 
 function renderLineStatus(data, layerCfg) {
-  var L = window.L;
   var lines = data.lines || [];
   if (!lines.length) return;
 
@@ -220,7 +237,8 @@ function renderLineStatus(data, layerCfg) {
 
 function _drawRouteLines(routes, lines) {
   var L = window.L;
-  var bounds = L.latLngBounds();
+  if (!L) return;
+  var bounds = new L.LatLngBounds();
   var hasBounds = false;
 
   for (var lineId in routes) {
@@ -253,13 +271,14 @@ function _drawRouteLines(routes, lines) {
 
 function renderMarkers(data, layerCfg) {
   var L = window.L;
+  if (!L) return;
   var items = data[layerCfg.dataKey || 'stations'] || data[layerCfg.dataKey || 'matches'] || [];
   if (!items.length) {
     showPanel('<div class="me-panel-header"><span class="me-panel-title">No results</span></div><div class="me-empty">No locations found.</div>', 'bottom-left');
     return;
   }
 
-  var bounds = L.latLngBounds();
+  var bounds = new L.LatLngBounds();
   var hasBounds = false;
 
   for (var i = 0; i < items.length; i++) {
@@ -446,6 +465,7 @@ function renderArrivals(data, layerCfg) {
 
 function renderJourney(data, layerCfg) {
   var L = window.L;
+  if (!L) return;
   var journeys = data.journeys || [];
   if (!journeys.length) {
     showPanel(
@@ -456,7 +476,7 @@ function renderJourney(data, layerCfg) {
     return;
   }
 
-  var bounds = L.latLngBounds();
+  var bounds = new L.LatLngBounds();
   var hasBounds = false;
 
   // Draw the first journey on the map
@@ -572,7 +592,7 @@ function showEmptyState() {
 
 // ── Main render ──
 
-renderDashboard = function(data) {
+renderDashboard = async function(data) {
   try {
   if (typeof window.__checkGate === 'function' && window.__checkGate(data)) {
     return;
@@ -591,6 +611,8 @@ renderDashboard = function(data) {
     return;
   }
 
+  await _mapReady;
+
   clearLayers();
   _currentData = data;
   _currentLayerCfg = layerCfg;
@@ -603,6 +625,12 @@ renderDashboard = function(data) {
   if (layerCfg.modelContext) {
     updateModelContext(layerCfg.modelContext);
   }
+
+  // Claude reads iframe.contentDocument.documentElement height directly
+  // (ignores ui/notifications/size-changed). Set after content renders
+  // to avoid the early-snapshot problem. 500px = max inline card height.
+  document.documentElement.style.height = '500px';
+
   } catch (e) {
     console.error('[MapEngine] renderDashboard CRASHED:', e, e.stack || '');
     showPanel(
