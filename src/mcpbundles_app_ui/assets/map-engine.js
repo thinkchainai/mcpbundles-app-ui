@@ -119,6 +119,26 @@ async function initMap() {
   }).addTo(_map);
 
   _map.setView(MAP_DEFAULTS.center, MAP_DEFAULTS.zoom);
+
+  // The iframe starts at 0 height in both ChatGPT and Claude — Leaflet
+  // would otherwise cache that 0×0 container size at L.map() time and
+  // never request tiles, never lay out polylines, and never re-render
+  // when the host expands the iframe. A ResizeObserver on the map
+  // container keeps Leaflet's internal size in sync with every host
+  // resize (initial expansion to 500px, fullscreen punch-out, manual
+  // browser resize). invalidateSize forces a re-measure + re-render.
+  if (typeof ResizeObserver === 'function') {
+    var ro = new ResizeObserver(function() {
+      if (_map) _map.invalidateSize(false);
+    });
+    ro.observe(container);
+  } else {
+    // Older host webviews — best-effort window resize hook only.
+    window.addEventListener('resize', function() {
+      if (_map) _map.invalidateSize(false);
+    });
+  }
+
   if (_resolveMapReady) _resolveMapReady();
 }
 
@@ -630,6 +650,16 @@ renderDashboard = async function(data) {
   // (ignores ui/notifications/size-changed). Set after content renders
   // to avoid the early-snapshot problem. 500px = max inline card height.
   document.documentElement.style.height = '500px';
+
+  // Force Leaflet to re-measure once the height transition has had a
+  // chance to settle in the host iframe. The ResizeObserver in initMap
+  // also handles this, but explicit invalidation here covers hosts that
+  // batch the size change in a way the observer misses on first paint.
+  if (_map) {
+    requestAnimationFrame(function() {
+      if (_map) _map.invalidateSize(false);
+    });
+  }
 
   } catch (e) {
     console.error('[MapEngine] renderDashboard CRASHED:', e, e.stack || '');

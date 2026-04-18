@@ -475,10 +475,32 @@ async function renderMap(container, data, mapCfg) {
     _mapEl = container;
     _map = L.map(container, { zoomControl: true, attributionControl: true });
     L.tileLayer(MAP_DEFAULTS.tileUrl, { attribution: MAP_DEFAULTS.attribution, maxZoom: 18 }).addTo(_map);
+
+    // The host iframe starts at 0 height in both ChatGPT and Claude. Without
+    // a ResizeObserver, Leaflet caches that 0×0 container size at L.map()
+    // time and never requests tiles or lays out polylines, even after the
+    // iframe later expands. The trailing setTimeout(invalidateSize, 100)
+    // below covers the first render only — the observer covers every
+    // subsequent host-driven resize (fullscreen punch-out, manual browser
+    // resize, switching between card detail views).
+    if (typeof ResizeObserver === 'function') {
+      var ro = new ResizeObserver(function() {
+        if (_map) _map.invalidateSize(false);
+      });
+      ro.observe(container);
+    } else {
+      window.addEventListener('resize', function() {
+        if (_map) _map.invalidateSize(false);
+      });
+    }
   }
 
   clearMapLayers();
-  var bounds = L.latLngBounds();
+  // `new L.LatLngBounds()` is the constructor form. The factory `L.latLngBounds()`
+  // (lowercase, no `new`) requires at least one arg and throws
+  // `Cannot read properties of undefined (reading 'latLngBounds')` on Leaflet
+  // 1.9.4 when called with no args — same crash that broke the TFL map engine.
+  var bounds = new L.LatLngBounds();
   var hasBounds = false;
   var items = resolveKey(data, mapCfg.dataKey) || [];
 

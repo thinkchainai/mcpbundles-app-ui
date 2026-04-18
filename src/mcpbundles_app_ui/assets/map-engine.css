@@ -2,8 +2,11 @@
 
 /* Claude reads documentElement height directly (ignores size-changed).
    An explicit min-height prevents the circular iframe sizing collapse
-   and requests the 500px max inline card height from the host. */
-.me-active html { min-height: 500px; }
+   and requests the 500px max inline card height from the host. The
+   `me-active` class is set on <html> (see renderer.py) so this matches
+   the root element directly — earlier placements of the class on <body>
+   meant `.me-active html` matched nothing and the iframe stayed at 0px. */
+html.me-active { min-height: 500px; }
 
 /* Full-bleed map container */
 #me-map {

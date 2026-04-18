@@ -75,8 +75,14 @@ class AppRenderer:
         gate_engine_js = _load_asset("gate-engine.js") if has_gates else ""
         gate_engine_css = _load_asset("gate-engine.css") if has_gates else ""
 
+        # Place `me-active` on <html> (not <body>) so descendant selectors
+        # like `.me-active html { min-height: 500px }` actually match — `html`
+        # is the root element and is never a descendant of `body`, so the
+        # previous `<body class="me-active">` placement made the height rule
+        # dead and the iframe collapsed to 0 height (which in turn meant
+        # Leaflet initialised against a 0×0 container and rendered no tiles).
         return f"""<!DOCTYPE html>
-<html lang="en">
+<html lang="en"{' class="me-active"' if has_map else ''}>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -94,7 +100,7 @@ class AppRenderer:
   </style>
   {custom_head or ''}
 </head>
-<body{' class="me-active"' if has_map else ''}>
+<body>
   {"<div id='me-map'></div><div id='me-panel' class='me-panel'></div><div id='me-status'></div>" if has_map else ""}
   <div class="dashboard">
     <header class="dashboard-header">
