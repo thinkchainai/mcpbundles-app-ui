@@ -85,6 +85,28 @@ function ensureLeafletLoaded() {
   });
 }
 
+var _markerClusterPromise = null;
+function ensureMarkerClusterLoaded() {
+  if (_markerClusterPromise) return _markerClusterPromise;
+  _markerClusterPromise = new Promise(function(resolve) {
+    if (window.L && window.L.markerClusterGroup) { resolve(); return; }
+    var css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css';
+    document.head.appendChild(css);
+    var defaultCss = document.createElement('link');
+    defaultCss.rel = 'stylesheet';
+    defaultCss.href = 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css';
+    document.head.appendChild(defaultCss);
+    var script = document.createElement('script');
+    script.src = 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js';
+    script.onload = function() { resolve(); };
+    script.onerror = function() { resolve(); };  // fall back to non-clustered.
+    document.head.appendChild(script);
+  });
+  return _markerClusterPromise;
+}
+
 async function initMap() {
   try {
     await ensureLeafletLoaded();
@@ -139,10 +161,19 @@ async function initMap() {
     });
   }
 
+  // Preload the marker-cluster plugin so dense map searches (e.g. EV
+  // chargers across an entire city) cluster automatically on second-paint
+  // even though the first call to renderMarkers ran before the script
+  // landed. Failures are silently swallowed — clustering is a UX
+  // upgrade, not a hard requirement.
+  ensureMarkerClusterLoaded();
+
   if (_resolveMapReady) _resolveMapReady();
 }
 
 function clearLayers() {
+  var legend = document.getElementById('me-legend');
+  if (legend) legend.classList.remove('me-legend-visible');
   if (!_map) return;
   for (var i = 0; i < _mapLayers.length; i++) _map.removeLayer(_mapLayers[i]);
   _mapLayers = [];
@@ -289,6 +320,58 @@ function _drawRouteLines(routes, lines) {
 
 // ── Layer: markers (bike points, search results) ──
 
+function _resolvePath(obj, path) {
+  if (!obj || !path) return undefined;
+  var parts = String(path).split('.');
+  var cur = obj;
+  for (var i = 0; i < parts.length; i++) {
+    if (cur === null || cur === undefined) return undefined;
+    cur = cur[parts[i]];
+  }
+  return cur;
+}
+
+function _drawPolylineFromCfg(data, layerCfg) {
+  var L = window.L;
+  if (!L) return null;
+  var path = layerCfg.polylineDataKey;
+  if (!path) return null;
+  var coords = _resolvePath(data, path);
+  if (!Array.isArray(coords) || coords.length < 2) return null;
+  var latLngs = [];
+  for (var i = 0; i < coords.length; i++) {
+    var c = coords[i];
+    if (!Array.isArray(c) || c.length < 2) continue;
+    latLngs.push([c[0], c[1]]);
+  }
+  if (latLngs.length < 2) return null;
+  var poly = L.polyline(latLngs, {
+    color: layerCfg.polylineColor || '#2563eb',
+    weight: layerCfg.polylineWeight || 4,
+    opacity: 0.8,
+    lineJoin: 'round'
+  });
+  poly.addTo(_map);
+  _mapLayers.push(poly);
+  return latLngs;
+}
+
+function _ensureChargeLevelLegend() {
+  var existing = document.getElementById('me-legend');
+  if (existing) {
+    existing.classList.add('me-legend-visible');
+    return;
+  }
+  var el = document.createElement('div');
+  el.id = 'me-legend';
+  el.className = 'me-legend me-legend-visible';
+  el.innerHTML =
+    '<div class="me-legend-row"><span class="me-legend-dot" style="background:#22c55e"></span>DC fast</div>' +
+    '<div class="me-legend-row"><span class="me-legend-dot" style="background:#f97316"></span>Level 2</div>' +
+    '<div class="me-legend-row"><span class="me-legend-dot" style="background:#9ca3af"></span>Level 1</div>';
+  document.body.appendChild(el);
+}
+
 function renderMarkers(data, layerCfg) {
   var L = window.L;
   if (!L) return;
@@ -298,8 +381,29 @@ function renderMarkers(data, layerCfg) {
     return;
   }
 
+  var polylineLatLngs = _drawPolylineFromCfg(data, layerCfg);
+
   var bounds = new L.LatLngBounds();
   var hasBounds = false;
+  if (polylineLatLngs) {
+    for (var pi = 0; pi < polylineLatLngs.length; pi++) {
+      bounds.extend(polylineLatLngs[pi]);
+      hasBounds = true;
+    }
+  }
+
+  var clusterGroup = null;
+  var clusterEnabled = layerCfg.cluster !== false
+    && items.length > 25
+    && L.markerClusterGroup;
+  if (clusterEnabled) {
+    clusterGroup = L.markerClusterGroup({
+      showCoverageOnHover: false,
+      maxClusterRadius: 50,
+      spiderfyOnMaxZoom: true,
+      disableClusteringAtZoom: 15
+    });
+  }
 
   for (var i = 0; i < items.length; i++) {
     var item = items[i];
@@ -329,6 +433,12 @@ function renderMarkers(data, layerCfg) {
       var total = item.total_docks || 1;
       var pct = (bikes / total) * 100;
       markerColor = pct > 50 ? '#22c55e' : pct > 20 ? '#eab308' : '#ef4444';
+    } else if (layerCfg.colorFn === 'charge-level') {
+      var lvl = item.charge_level || '';
+      if (lvl === 'DC') markerColor = '#22c55e';
+      else if (lvl === 'L2') markerColor = '#f97316';
+      else if (lvl === 'L1') markerColor = '#9ca3af';
+      else markerColor = '#6b7280';
     }
 
     var cm = L.circleMarker(pt, {
@@ -348,11 +458,24 @@ function renderMarkers(data, layerCfg) {
       })(item);
     }
 
-    cm.addTo(_map);
-    _mapLayers.push(cm);
+    if (clusterGroup) {
+      clusterGroup.addLayer(cm);
+    } else {
+      cm.addTo(_map);
+      _mapLayers.push(cm);
+    }
+  }
+
+  if (clusterGroup) {
+    clusterGroup.addTo(_map);
+    _mapLayers.push(clusterGroup);
   }
 
   if (hasBounds) _map.fitBounds(bounds, { padding: [60, 60], maxZoom: 15 });
+
+  if (layerCfg.colorFn === 'charge-level') {
+    _ensureChargeLevelLegend();
+  }
 
   // Build panel list
   var panelHtml = '<div class="me-panel-header">' +
@@ -623,11 +746,15 @@ renderDashboard = async function(data) {
 
   var layerCfg = matchLayer(toolName);
   if (!layerCfg) {
-    showPanel(
-      '<div class="me-panel-header"><span class="me-panel-title">Data received</span></div>' +
-      '<div class="me-empty">No map layer configured for this tool.</div>',
-      'bottom-left'
-    );
+    // Non-map tool (e.g. data lookup, comparison, listing). The chat
+    // surface already shows the result; the map panel should stay on
+    // whatever the user last saw (markers + summary from the previous
+    // map tool) rather than flashing an engineering message. If nothing
+    // useful is on screen yet, fall back to the configured empty state.
+    console.info('[MapEngine] No layer mapped for tool "' + toolName + '"; preserving current panel.');
+    if (!_currentLayerCfg) {
+      showEmptyState();
+    }
     return;
   }
 

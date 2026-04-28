@@ -81,6 +81,8 @@ function interpolate(template, data) {
 function formatValue(v, fmt) {
   if (v === null || v === undefined) return '\u2014';
   if (fmt === 'number') return typeof v === 'number' ? v.toLocaleString() : String(v);
+  if (fmt === 'percent') return typeof v === 'number' ? (v * 100).toFixed(1) + '%' : String(v);
+  if (fmt === 'percent-round') return typeof v === 'number' ? Math.round(v * 100) + '%' : String(v);
   if (fmt === 'duration-seconds') {
     var m = Math.round(v / 60);
     if (m < 1) return 'Due';
@@ -600,7 +602,7 @@ function renderActions(actions, rowData, cardData) {
 // ── Card rendering ──
 
 function renderCard(data, cardCfgOverride) {
-  var toolName = data._source_tool || state.toolName || '';
+  var toolName = data._source_tool || data._forwardedFrom || state.toolName || '';
   var cardCfg = cardCfgOverride || matchCard(toolName);
   if (!cardCfg) return;
   _currentData = data; _currentCardCfg = cardCfg;
@@ -681,7 +683,7 @@ async function goFullscreen() {
 
 renderDashboard = function(data) {
   _autoLoadFired = true;
-  var toolName = data._source_tool || state.toolName || '';
+  var toolName = data._source_tool || data._forwardedFrom || state.toolName || '';
   if (_isFullscreen && _map) {
     var cardCfg = matchCard(toolName);
     if (cardCfg && cardCfg.map) {
