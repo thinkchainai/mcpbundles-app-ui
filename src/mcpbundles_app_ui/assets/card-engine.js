@@ -74,14 +74,18 @@ function interpolate(template, data) {
   if (!template) return '';
   return template.replace(/\{(\w[\w.]*)\}/g, function(m, key) {
     var val = resolveKey(data, key);
-    return val !== null && val !== undefined ? String(val) : m;
+    return val !== null && val !== undefined ? String(val) : '';
   });
 }
 
 function formatValue(v, fmt) {
   if (v === null || v === undefined) return '\u2014';
   if (fmt === 'number') return typeof v === 'number' ? v.toLocaleString() : String(v);
-  if (fmt === 'percent') return typeof v === 'number' ? (v * 100).toFixed(1) + '%' : String(v);
+  if (fmt === 'currency') return typeof v === 'number' ? '\u00a3' + v.toLocaleString() : String(v);
+  if (fmt === 'percent') {
+    if (typeof v === 'number') return (v * 100).toFixed(v === 0 || Math.abs(v) >= 0.1 ? 1 : 2) + '%';
+    return String(v);
+  }
   if (fmt === 'percent-round') return typeof v === 'number' ? Math.round(v * 100) + '%' : String(v);
   if (fmt === 'duration-seconds') {
     var m = Math.round(v / 60);
